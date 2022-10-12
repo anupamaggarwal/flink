@@ -38,6 +38,7 @@ under the License.
 		<module>flink-hadoop-compatibility</module>
 		<module>flink-hcatalog</module>
 		<module>flink-connector-hbase-base</module>
+		<module>flink-connector-connectbridge</module>
 		<module>flink-connector-hbase-1.4</module>
 		<module>flink-connector-hbase-2.2</module>
 		<module>flink-connector-hive</module>
