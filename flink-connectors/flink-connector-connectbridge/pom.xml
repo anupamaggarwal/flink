@@ -36,7 +36,22 @@ under the License.
 
 	<dependencies>
 
+		<!-- core dependencies added for kafka connect -->
+
+		<dependency>
+			<groupId>io.confluent.kafka.connect</groupId>
+			<artifactId>kafka-connect-datagen</artifactId>
+			<version>0.7.0-SNAPSHOT</version>    <!--todo fix to non snapshot version -->
+		</dependency>
+
+		<dependency>
+			<groupId>org.apache.kafka</groupId>
+			<artifactId>connect-api</artifactId>
+			<version>3.3.1</version>
+		</dependency>
 		<!-- core dependencies -->
+
+
 
 		<dependency>
 			<groupId>org.apache.flink</groupId>
@@ -72,6 +87,8 @@ under the License.
 			<optional>true</optional>
 		</dependency>
 
+
+
 		<!-- test dependencies -->
 
 		<dependency>
@@ -82,11 +99,6 @@ under the License.
 			<type>test-jar</type>
 		</dependency>
 
-		<dependency>
-			<groupId>io.confluent.kafka.connect</groupId>
-			<artifactId>kafka-connect-datagen</artifactId>
-			<version>0.7.0-SNAPSHOT</version>    <!--todo fix to non snapshot version -->
-		</dependency>
 
 		<dependency>
 			<groupId>org.apache.flink</groupId>
