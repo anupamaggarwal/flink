@@ -1,5 +1,7 @@
 package org.apache.flink.connector.connectbridge.src;
 
+import com.google.common.collect.ImmutableMap;
+
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.connector.source.Boundedness;
 import org.apache.flink.api.connector.source.Source;
@@ -40,7 +42,8 @@ public class ConnectAdaptorSource<OUT>
 
     @Override
     public SourceReader<OUT, ConnectorAdaptorSplit> createReader(SourceReaderContext readerContext) throws Exception {
-        return null;
+        return new ConnectAdaptorSourceReader<>(()->null ,new ConnectAdaptorSourceRecordEmitter<>(),
+                readerContext.getConfiguration(), readerContext);
     }
 
     @Override
@@ -48,7 +51,7 @@ public class ConnectAdaptorSource<OUT>
             throws Exception {
         //todo generate task properties and pass in the enumerator
 
-        return new ConnectAdaptorSourceEnumerator(ImmutableList.of(),enumContext);
+        return new ConnectAdaptorSourceEnumerator(ImmutableMap.of(),enumContext);
     }
 
     @Override
@@ -71,7 +74,7 @@ public class ConnectAdaptorSource<OUT>
 
     @Override
     public TypeInformation<OUT> getProducedType() {
-        return null;
+        return deserializationSchema.getProducedType();
     }
 
 }
