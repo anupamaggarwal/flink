@@ -44,6 +44,8 @@ public class ConnectAdaptorSourceEnumerator
 
     @Override
     public void handleSplitRequest(int subtaskId, @Nullable String requesterHostname) {
+        LOG.debug(
+                "Split request from reader  {}", subtaskId);
 
     }
 
@@ -57,10 +59,13 @@ public class ConnectAdaptorSourceEnumerator
         LOG.debug(
                 "Adding reader {} to ConnectAdaptorSourceEnumerator with taskID",
                 subtaskId);
+        this.context.assignSplit(new ConnectorAdaptorSplit("task-" + subtaskId),subtaskId);
     }
 
     @Override
     public ConnectAdaptorEnumState snapshotState(long checkpointId) throws Exception {
+        LOG.debug(
+                "Connect adaptor snapshot called with checkpoint id {}",checkpointId);
         return null;
     }
 

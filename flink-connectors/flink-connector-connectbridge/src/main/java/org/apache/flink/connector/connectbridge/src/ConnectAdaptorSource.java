@@ -13,11 +13,13 @@ import org.apache.flink.api.java.typeutils.ResultTypeQueryable;
 import org.apache.flink.connector.connectbridge.src.enumerate.ConnectAdaptorEnumState;
 import org.apache.flink.connector.connectbridge.src.enumerate.ConnectAdaptorSourceEnumerator;
 import org.apache.flink.connector.connectbridge.src.reader.deserializer.ConnectRecordDeserializationSchema;
+import org.apache.flink.connector.connectbridge.src.split.ConnectAdaptorSplitSerializer;
 import org.apache.flink.connector.connectbridge.src.split.ConnectorAdaptorSplit;
 import org.apache.flink.core.io.SimpleVersionedSerializer;
 
 import org.apache.flink.shaded.guava30.com.google.common.collect.ImmutableList;
 
+import java.io.IOException;
 import java.util.Map;
 
 public class ConnectAdaptorSource<OUT>
@@ -37,12 +39,13 @@ public class ConnectAdaptorSource<OUT>
 
     @Override
     public Boundedness getBoundedness() {
-        return Boundedness.CONTINUOUS_UNBOUNDED;
+        return this.boundedness;
     }
 
     @Override
     public SourceReader<OUT, ConnectorAdaptorSplit> createReader(SourceReaderContext readerContext) throws Exception {
-        return new ConnectAdaptorSourceReader<>(()->null ,new ConnectAdaptorSourceRecordEmitter<>(),
+        return new ConnectAdaptorSourceReader<>(()->new ConnectAdaptorSplitReader()
+                ,new ConnectAdaptorSourceRecordEmitter<>(),
                 readerContext.getConfiguration(), readerContext);
     }
 
@@ -59,12 +62,12 @@ public class ConnectAdaptorSource<OUT>
             SplitEnumeratorContext<ConnectorAdaptorSplit> enumContext,
             ConnectAdaptorEnumState checkpoint
     ) throws Exception {
-        return null;
+        return new ConnectAdaptorSourceEnumerator(ImmutableMap.of(),enumContext);
     }
 
     @Override
     public SimpleVersionedSerializer<ConnectorAdaptorSplit> getSplitSerializer() {
-        return null;
+        return new ConnectAdaptorSplitSerializer();
     }
 
     @Override

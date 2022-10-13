@@ -58,6 +58,7 @@ public class ConnectAdaptorSourceIT {
         env.setParallelism(1);
        DataStream<String> stream =
                 env.fromSource(source, WatermarkStrategy.noWatermarks(), "testBasicRead");
+
         executeAndVerify(env, stream);
     }
 
