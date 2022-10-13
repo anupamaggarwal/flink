@@ -1,7 +1,6 @@
-package org.apache.flink.connector.connectbridge.src;
+package org.apache.flink.connector.connectbridge.src.reader.deserializer;
 
 import org.apache.flink.api.common.serialization.DeserializationSchema;
-import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.typeutils.ResultTypeQueryable;
 import org.apache.flink.util.Collector;
 
@@ -38,4 +37,5 @@ public interface ConnectRecordDeserializationSchema<T> extends Serializable,
      * @param out The collector to put the resulting messages.
      */
     void deserialize(SourceRecord record, Collector<T> out) throws IOException;
+
 }
