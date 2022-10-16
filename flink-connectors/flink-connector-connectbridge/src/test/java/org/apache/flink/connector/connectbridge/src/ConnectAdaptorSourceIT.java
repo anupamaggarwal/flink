@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -28,6 +29,18 @@ public class ConnectAdaptorSourceIT {
 
 
     private static final int PARALLELISM = 4;
+
+    private static Map<String, String> DATAGEN_CONFIG = ImmutableMap.<String, String>builder()
+            .put("connector.class", "io.confluent.kafka.connect.datagen.DatagenConnector")
+            .put("connector.task.class", "io.confluent.kafka.connect.datagen.DatagenTask")
+            .put("key.converter", "org.apache.kafka.connect.storage.StringConverter")
+            .put("value.converter", "org.apache.kafka.connect.json.JsonConverter")
+            .put("max.interval", "1000")
+            .put("kafka.topic", "Foobar")
+            .put("quickstart", "users")
+            .put("iterations", "10")
+            .put("tasks.max", "1")
+            .build();
 
 
     @RegisterExtension
@@ -42,21 +55,16 @@ public class ConnectAdaptorSourceIT {
 
 
     @Test
-    public void
+    public void testBasicRead(@InjectMiniCluster MiniCluster miniCluster) throws Exception {
 
-
-    testBasicRead(@InjectMiniCluster MiniCluster miniCluster)  throws Exception {
-
-
-       ConnectAdaptorSource<String> source =
-                new ConnectAdaptorSourceBuilder<String>(ImmutableMap.of()).setDeserializer(
-                        new ConnectValueOnlyDeserializationSchemaWrapper(StringDeserializer.class)).
+        ConnectAdaptorSource<String> source =
+                new ConnectAdaptorSourceBuilder<String>(DATAGEN_CONFIG).setDeserializer(
+                                new ConnectValueOnlyDeserializationSchemaWrapper(StringDeserializer.class)).
                         setBounded(Boundedness.BOUNDED).build();
 
-
-       StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        env.setParallelism(1);
-       DataStream<String> stream =
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(Integer.parseInt(DATAGEN_CONFIG.get("tasks.max")));
+        DataStream<String> stream =
                 env.fromSource(source, WatermarkStrategy.noWatermarks(), "testBasicRead");
 
         executeAndVerify(env, stream);
@@ -64,7 +72,8 @@ public class ConnectAdaptorSourceIT {
 
 
     private void executeAndVerify(
-            StreamExecutionEnvironment env, DataStream<String> stream) throws Exception {
+            StreamExecutionEnvironment env, DataStream<String> stream
+    ) throws Exception {
         stream.addSink(
                 new RichSinkFunction<String>() {
                     @Override
@@ -80,7 +89,7 @@ public class ConnectAdaptorSourceIT {
                 });
         List<String> result = env.execute().getAccumulatorResult("result");
 
-        assertEquals(result.size(),5);
+        assertEquals(result.size(), 5);
     }
 
 

@@ -19,19 +19,32 @@ import org.apache.flink.core.io.SimpleVersionedSerializer;
 
 import java.util.Map;
 
+/**
+ * Class which serves as as adaptor to Kafka connect connectors
+ * <p/>
+ * This is the main class which tries to bridge flink to enable it to run kafka connectors
+ *
+ * @param <RecordT>
+ */
 public class ConnectAdaptorSource<RecordT>
-        implements Source<RecordT, ConnectorAdaptorSplit, ConnectAdaptorEnumState> , ResultTypeQueryable<RecordT> {
+        implements Source<RecordT, ConnectorAdaptorSplit, ConnectAdaptorEnumState>,
+        ResultTypeQueryable<RecordT> {
 
     private final Boundedness boundedness;
+    private final Map<String, String> connectorConfigs;
     private final ConnectRecordDeserializationSchema<RecordT> deserializationSchema;
 
 
-    ConnectAdaptorSource(Map<String, String> connectorProperties,
-                         Boundedness boundedness,
-                         ConnectRecordDeserializationSchema<RecordT> deserializationSchema) {
+    ConnectAdaptorSource(
+            Map<String, String> connectorProperties,
+            Boundedness boundedness,
+            ConnectRecordDeserializationSchema<RecordT> deserializationSchema
+    ) {
+
+        //check for required params per connector type
         this.deserializationSchema = deserializationSchema;
         this.boundedness = boundedness;
-
+        this.connectorConfigs = connectorProperties;
     }
 
     @Override
@@ -41,17 +54,18 @@ public class ConnectAdaptorSource<RecordT>
 
     @Override
     public SourceReader<RecordT, ConnectorAdaptorSplit> createReader(SourceReaderContext readerContext) throws Exception {
-        return new ConnectAdaptorSourceReader<>(()->new ConnectAdaptorSplitReader()
-                ,new ConnectAdaptorSourceRecordEmitter<>(deserializationSchema),
-                readerContext.getConfiguration(), readerContext);
+        return new ConnectAdaptorSourceReader<>(() -> new ConnectAdaptorSplitReader()
+                , new ConnectAdaptorSourceRecordEmitter<>(deserializationSchema),
+                readerContext.getConfiguration(), readerContext
+        );
     }
 
     @Override
-    public SplitEnumerator<ConnectorAdaptorSplit, ConnectAdaptorEnumState> createEnumerator(SplitEnumeratorContext<ConnectorAdaptorSplit> enumContext)
+    public SplitEnumerator<ConnectorAdaptorSplit, ConnectAdaptorEnumState> createEnumerator(
+            SplitEnumeratorContext<ConnectorAdaptorSplit> enumContext
+    )
             throws Exception {
-        //todo generate task properties and pass in the enumerator
-
-        return new ConnectAdaptorSourceEnumerator(ImmutableMap.of(),enumContext);
+        return new ConnectAdaptorSourceEnumerator(this.connectorConfigs, enumContext);
     }
 
     @Override
@@ -59,7 +73,7 @@ public class ConnectAdaptorSource<RecordT>
             SplitEnumeratorContext<ConnectorAdaptorSplit> enumContext,
             ConnectAdaptorEnumState checkpoint
     ) throws Exception {
-        return new ConnectAdaptorSourceEnumerator(ImmutableMap.of(),enumContext);
+        return new ConnectAdaptorSourceEnumerator(ImmutableMap.of(), enumContext);
     }
 
     @Override
