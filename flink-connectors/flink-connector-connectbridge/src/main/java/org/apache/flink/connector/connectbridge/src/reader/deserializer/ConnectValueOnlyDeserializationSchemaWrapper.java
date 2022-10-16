@@ -1,57 +1,52 @@
 package org.apache.flink.connector.connectbridge.src.reader.deserializer;
 
-import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.api.java.typeutils.TypeExtractor;
 import org.apache.flink.util.Collector;
 
-import org.apache.kafka.common.header.internals.RecordHeaders;
-import org.apache.kafka.connect.header.Header;
-import org.apache.kafka.connect.header.Headers;
+import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.connect.source.SourceRecord;
-import org.apache.kafka.connect.storage.Converter;
-import org.apache.kafka.connect.storage.HeaderConverter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 
-class ConnectValueOnlyDeserializationSchemaWrapper<T> implements ConnectRecordDeserializationSchema<T> {
-    private final DeserializationSchema<T> deserializationSchema;
-    private final Converter valueConverter;
-    private final Converter keyConverter;
-    private final HeaderConverter headerConverter;
+/**
+ * Class which handles conversion from SourceRecord to desired O/P format of type T
+ * We usually don't care about the keys
+ * <p/>
+ * Other information in sourceRecord will need to be converted into flink based counterparts
+ * For example offsets in sourceRecord will have to be converted to offsets of some kinds which flink's checkpoint mechanism understand
+ * @param <T>
+ */
+ public class ConnectValueOnlyDeserializationSchemaWrapper<T> implements ConnectRecordDeserializationSchema<T> {
+     private static final Logger LOG = LoggerFactory.getLogger(ConnectValueOnlyDeserializationSchemaWrapper.class);
+     private transient Deserializer<T> deserializer;
+     private final  Class<? extends Deserializer<T>> deserializerClass;
 
-    ConnectValueOnlyDeserializationSchemaWrapper(DeserializationSchema<T> deserializationSchema,
-                                                 Converter keyConverter, Converter valueConverter, HeaderConverter headerConverter) {
-        this.deserializationSchema = deserializationSchema;
-        this.keyConverter = keyConverter;
-        this.valueConverter = valueConverter;
-        this.headerConverter = headerConverter;
+    public ConnectValueOnlyDeserializationSchemaWrapper( Class<? extends Deserializer<T>> deserializerClass) {
+        this.deserializerClass = deserializerClass;
+        try {
+            this.deserializer = (Deserializer<T>) Class.forName(deserializerClass.getName()).newInstance();
+        } catch (Exception e) {
+             LOG.warn("Failed to convert {}",e);
+        }
+
+
     }
 
     @Override
     public void deserialize(SourceRecord record, Collector<T> out) throws IOException {
-        //todo we probably don't care about the key?
-        byte[] value = valueConverter.fromConnectData(record.topic(), convertHeaderFor(record),
-                record.valueSchema(), record.value());
-
-        deserializationSchema.deserialize(value,out);
+        //we probably don't care about the key?
+       T val =  this.deserializer.deserialize(record.topic(),((String)record.value()).getBytes());
+       out.collect(val);
     }
 
     @Override
     public TypeInformation<T> getProducedType() {
-        return null;
+        return TypeExtractor.createTypeInfo(Deserializer.class, this.deserializerClass, 0, null, null);
+
     }
 
-    protected RecordHeaders convertHeaderFor(SourceRecord record) {
-        Headers headers = record.headers();
-        RecordHeaders result = new RecordHeaders();
-        if (headers != null) {
-            String topic = record.topic();
-            for (Header header : headers) {
-                String key = header.key();
-                byte[] rawHeader = headerConverter.fromConnectHeader(topic, key, header.schema(), header.value());
-                result.add(key, rawHeader);
-            }
-        }
-        return result;
-    }
+
 }

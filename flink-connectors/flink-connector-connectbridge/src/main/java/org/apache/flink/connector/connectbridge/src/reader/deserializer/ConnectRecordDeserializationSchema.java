@@ -1,29 +1,18 @@
 package org.apache.flink.connector.connectbridge.src.reader.deserializer;
 
-import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.java.typeutils.ResultTypeQueryable;
 import org.apache.flink.util.Collector;
 
+import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.connect.source.SourceRecord;
-
 
 import java.io.IOException;
 import java.io.Serializable;
+import java.util.Collections;
+import java.util.Map;
 
 public interface ConnectRecordDeserializationSchema<T> extends Serializable,
         ResultTypeQueryable<T> {
-    /**
-     * Initialization method for the schema. It is called before the actual working methods {@link
-     * #deserialize} and thus suitable for one time setup work.
-     *
-     * <p>The provided
-     * {@link org.apache.flink.api.common.serialization.DeserializationSchema.InitializationContext} can be used to access
-     * additional features such as e.g. registering user metrics.
-     *
-     * @param context Contextual information that can be used during initialization.
-     */
-    default void open(DeserializationSchema.InitializationContext context) throws Exception {}
-
 
     /**
      * Deserializes the kafka connect record.
@@ -37,5 +26,19 @@ public interface ConnectRecordDeserializationSchema<T> extends Serializable,
      * @param out The collector to put the resulting messages.
      */
     void deserialize(SourceRecord record, Collector<T> out) throws IOException;
+
+
+
+
+    static <V> ConnectRecordDeserializationSchema<V> valueOnly(
+            Class<? extends Deserializer<V>> valueDeserializerClass) {
+        return valueOnly(valueDeserializerClass, Collections.emptyMap());
+    }
+
+
+    static <V, D extends Deserializer<V>> ConnectRecordDeserializationSchema<V> valueOnly(
+            Class<D> valueDeserializerClass, Map<String, String> config) {
+        return new ConnectValueOnlyDeserializationSchemaWrapper<>(valueDeserializerClass);
+    }
 
 }

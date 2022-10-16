@@ -14,6 +14,20 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * A barebones implementation of a SourceEnumerator meant to plug source kafka connectors to
+ * flink runtime
+ * <p/>
+ * On a high level splits are regarded as invidual tasks
+ * Every task will be run on a task slot and process individual task level data
+ * <p/>
+ * Framework's SourceReader pollNext will be transformed to calling poll on the connect tasks.
+ * SplitFetcherThreads will run these tasks on individual thread similar to connect runtime
+ * <p/>
+ * Any config updates /communication btw connector and tasks will be shared using Flink's custom SourceEvent mechanism
+ * @see org.apache.kafka.connect.connector.Task
+ * @see org.apache.kafka.connect.source.SourceRecord
+ */
 public class ConnectAdaptorSourceEnumerator
         implements SplitEnumerator<ConnectorAdaptorSplit,ConnectAdaptorEnumState> {
 
@@ -60,6 +74,7 @@ public class ConnectAdaptorSourceEnumerator
                 "Adding reader {} to ConnectAdaptorSourceEnumerator with taskID",
                 subtaskId);
         this.context.assignSplit(new ConnectorAdaptorSplit("task-" + subtaskId),subtaskId);
+        this.context.signalNoMoreSplits(subtaskId);
     }
 
     @Override

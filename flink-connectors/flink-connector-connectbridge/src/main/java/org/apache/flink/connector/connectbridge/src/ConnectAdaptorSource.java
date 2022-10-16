@@ -17,21 +17,18 @@ import org.apache.flink.connector.connectbridge.src.split.ConnectAdaptorSplitSer
 import org.apache.flink.connector.connectbridge.src.split.ConnectorAdaptorSplit;
 import org.apache.flink.core.io.SimpleVersionedSerializer;
 
-import org.apache.flink.shaded.guava30.com.google.common.collect.ImmutableList;
-
-import java.io.IOException;
 import java.util.Map;
 
-public class ConnectAdaptorSource<OUT>
-        implements Source<OUT, ConnectorAdaptorSplit, ConnectAdaptorEnumState> , ResultTypeQueryable<OUT> {
+public class ConnectAdaptorSource<RecordT>
+        implements Source<RecordT, ConnectorAdaptorSplit, ConnectAdaptorEnumState> , ResultTypeQueryable<RecordT> {
 
     private final Boundedness boundedness;
-    private final ConnectRecordDeserializationSchema<OUT> deserializationSchema;
+    private final ConnectRecordDeserializationSchema<RecordT> deserializationSchema;
 
 
     ConnectAdaptorSource(Map<String, String> connectorProperties,
                          Boundedness boundedness,
-                         ConnectRecordDeserializationSchema<OUT> deserializationSchema) {
+                         ConnectRecordDeserializationSchema<RecordT> deserializationSchema) {
         this.deserializationSchema = deserializationSchema;
         this.boundedness = boundedness;
 
@@ -43,9 +40,9 @@ public class ConnectAdaptorSource<OUT>
     }
 
     @Override
-    public SourceReader<OUT, ConnectorAdaptorSplit> createReader(SourceReaderContext readerContext) throws Exception {
+    public SourceReader<RecordT, ConnectorAdaptorSplit> createReader(SourceReaderContext readerContext) throws Exception {
         return new ConnectAdaptorSourceReader<>(()->new ConnectAdaptorSplitReader()
-                ,new ConnectAdaptorSourceRecordEmitter<>(),
+                ,new ConnectAdaptorSourceRecordEmitter<>(deserializationSchema),
                 readerContext.getConfiguration(), readerContext);
     }
 
@@ -76,7 +73,7 @@ public class ConnectAdaptorSource<OUT>
     }
 
     @Override
-    public TypeInformation<OUT> getProducedType() {
+    public TypeInformation<RecordT> getProducedType() {
         return deserializationSchema.getProducedType();
     }
 
