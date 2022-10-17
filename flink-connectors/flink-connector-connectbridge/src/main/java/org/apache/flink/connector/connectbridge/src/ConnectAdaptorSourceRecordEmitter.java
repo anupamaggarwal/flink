@@ -24,14 +24,12 @@ import org.apache.flink.connector.base.source.reader.RecordEmitter;
 import org.apache.flink.connector.connectbridge.src.enumerate.ConnectAdaptorEnumState;
 
 import org.apache.flink.connector.connectbridge.src.reader.deserializer.ConnectRecordDeserializationSchema;
-import org.apache.flink.connector.connectbridge.src.split.ConnectorAdaptorSplit;
-
 import org.apache.flink.util.Collector;
 
-import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.source.SourceRecord;
 
 import java.io.IOException;
+import java.util.function.Function;
 
 
 @Internal
@@ -39,9 +37,9 @@ final class ConnectAdaptorSourceRecordEmitter<T>
         implements RecordEmitter<SourceRecord, T, ConnectAdaptorEnumState> {
     private final SourceOutputWrapper<T> sourceOutputWrapper = new SourceOutputWrapper<>();
 
-    private final ConnectRecordDeserializationSchema<T> deserializationSchema;
-    public ConnectAdaptorSourceRecordEmitter(ConnectRecordDeserializationSchema<T> deserializationSchema){
-        this.deserializationSchema = deserializationSchema;
+    private final ConnectRecordDeserializationSchema<T> deserializer;
+    public ConnectAdaptorSourceRecordEmitter(ConnectRecordDeserializationSchema<T> deserializer){
+        this.deserializer = deserializer;
     }
 
 
@@ -52,11 +50,8 @@ final class ConnectAdaptorSourceRecordEmitter<T>
             ConnectAdaptorEnumState splitState
     ) throws Exception {
         try {
-            //Schema sourceRecordSchema = element.valueSchema();
             sourceOutputWrapper.setSourceOutput(output);
-            //sourceOutputWrapper.setTimestamp(element.timestamp());
-            output.collect((T)element.value());
-            //deserializationSchema.deserialize(element, sourceOutputWrapper);
+            deserializer.deserialize(element, sourceOutputWrapper);
         } catch (Exception e) {
             throw new IOException("Failed to deserialize consumer record due to", e);
         }

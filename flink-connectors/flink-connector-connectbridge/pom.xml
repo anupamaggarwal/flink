@@ -44,9 +44,16 @@ under the License.
 			<version>0.7.0-SNAPSHOT</version>    <!--todo fix to non snapshot version -->
 		</dependency>
 
+		<!-- Needed for kafka connect  dependencies -->
+
 		<dependency>
 			<groupId>org.apache.kafka</groupId>
 			<artifactId>connect-api</artifactId>
+			<version>3.3.1</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.kafka</groupId>
+			<artifactId>connect-json</artifactId>
 			<version>3.3.1</version>
 		</dependency>
 		<!-- core dependencies -->

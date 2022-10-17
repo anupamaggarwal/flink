@@ -33,16 +33,17 @@ public class ConnectAdaptorSource<RecordT>
     private final Boundedness boundedness;
     private final Map<String, String> connectorConfigs;
     private final ConnectRecordDeserializationSchema<RecordT> deserializationSchema;
+    private TypeInformation<RecordT> tTypeInformation;
 
 
     ConnectAdaptorSource(
             Map<String, String> connectorProperties,
             Boundedness boundedness,
-            ConnectRecordDeserializationSchema<RecordT> deserializationSchema
+            ConnectRecordDeserializationSchema<RecordT> deserializer
     ) {
 
         //check for required params per connector type
-        this.deserializationSchema = deserializationSchema;
+        this.deserializationSchema = deserializer;
         this.boundedness = boundedness;
         this.connectorConfigs = connectorProperties;
     }
@@ -54,6 +55,7 @@ public class ConnectAdaptorSource<RecordT>
 
     @Override
     public SourceReader<RecordT, ConnectorAdaptorSplit> createReader(SourceReaderContext readerContext) throws Exception {
+        //deserializationSchema.open(readerContext);
         return new ConnectAdaptorSourceReader<>(() -> new ConnectAdaptorSplitReader()
                 , new ConnectAdaptorSourceRecordEmitter<>(deserializationSchema),
                 readerContext.getConfiguration(), readerContext
@@ -88,7 +90,7 @@ public class ConnectAdaptorSource<RecordT>
 
     @Override
     public TypeInformation<RecordT> getProducedType() {
-        return deserializationSchema.getProducedType();
+         return deserializationSchema.getProducedType();
     }
 
 }
