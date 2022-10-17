@@ -2,7 +2,6 @@ package org.apache.flink.connector.connectbridge.src;
 
 import org.apache.flink.api.common.accumulators.ListAccumulator;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
-import org.apache.flink.api.common.typeinfo.BasicTypeInfo;
 import org.apache.flink.api.connector.source.Boundedness;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.connector.connectbridge.src.reader.deserializer.ConnectValueOnlyDeserializationSchemaWrapper;
@@ -17,15 +16,12 @@ import org.apache.flink.test.junit5.MiniClusterExtension;
 
 import com.google.common.collect.ImmutableMap;
 import org.apache.kafka.common.serialization.StringDeserializer;
-import org.apache.kafka.connect.json.JsonConverter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.util.List;
 import java.util.Map;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.in;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class ConnectAdaptorSourceIT {
@@ -74,23 +70,23 @@ public class ConnectAdaptorSourceIT {
     }
 
 
-    private void executeAndVerify(
-            StreamExecutionEnvironment env, DataStream<String> stream, int iterationsRequested
+    private <T> void executeAndVerify(
+            StreamExecutionEnvironment env, DataStream<T> stream, int iterationsRequested
     ) throws Exception {
         stream.addSink(
-                new RichSinkFunction<String>() {
+                new RichSinkFunction<T>() {
                     @Override
                     public void open(Configuration parameters) {
                         getRuntimeContext()
-                                .addAccumulator("result", new ListAccumulator<String>());
+                                .addAccumulator("result", new ListAccumulator<T>());
                     }
 
                     @Override
-                    public void invoke(String value, Context context) {
+                    public void invoke(T value, Context context) {
                         getRuntimeContext().getAccumulator("result").add(value);
                     }
                 });
-        List<String> result = env.execute().getAccumulatorResult("result");
+        List<T> result = env.execute().getAccumulatorResult("result");
         System.out.println("Printing values obtained from connector");
         result.forEach(System.out::println);
         assertEquals(result.size(), iterationsRequested);
