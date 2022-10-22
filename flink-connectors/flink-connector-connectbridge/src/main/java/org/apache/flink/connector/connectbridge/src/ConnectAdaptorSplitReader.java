@@ -171,7 +171,7 @@ public class ConnectAdaptorSplitReader implements SplitReader<SourceRecord, Conn
                     queueRecords.addAll(records);
                 }
             } catch (Exception e) {
-                LOG.error("Error while retrieving from task ", e);
+               // LOG.error("Error while retrieving from task ", e);
                 //need to stop now
             }
             if (!queueRecords.isEmpty()) {

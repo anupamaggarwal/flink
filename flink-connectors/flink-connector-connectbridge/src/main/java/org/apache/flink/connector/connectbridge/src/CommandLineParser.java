@@ -36,73 +36,47 @@ import java.util.OptionalInt;
  */
 public class CommandLineParser extends ExecutionConfig.GlobalJobParameters {
 
-    public static final String INPUT_KEY = "input";
-    public static final String OUTPUT_KEY = "output";
-    public static final String DISCOVERY_INTERVAL = "discovery-interval";
+    public static final String ITERATIONS = "iterations";
     public static final String EXECUTION_MODE = "execution-mode";
 
     public static CommandLineParser fromArgs(String[] args) throws Exception {
         MultipleParameterTool params = MultipleParameterTool.fromArgs(args);
-        Path[] inputs = null;
-        if (params.has(INPUT_KEY)) {
-            inputs =
-                    params.getMultiParameterRequired(INPUT_KEY).stream()
-                            .map(Path::new)
-                            .toArray(Path[]::new);
+        int iterations=10;
+        if (params.has(ITERATIONS)) {
+            iterations = Integer.parseInt(params.get(ITERATIONS));
         } else {
-            System.out.println("Executing example with default input data.");
-            System.out.println("Use --input to specify file input.");
+            System.out.println("Executing example with default iterations of 10 data points");
         }
 
-        Path output = null;
-        if (params.has(OUTPUT_KEY)) {
-            output = new Path(params.get(OUTPUT_KEY));
-        } else {
-            System.out.println("Printing result to stdout. Use --output to specify output path.");
-        }
-
-        Duration watchInterval = null;
-        if (params.has(DISCOVERY_INTERVAL)) {
-            watchInterval = TimeUtils.parseDuration(params.get(DISCOVERY_INTERVAL));
-        }
 
         RuntimeExecutionMode executionMode = ExecutionOptions.RUNTIME_MODE.defaultValue();
         if (params.has(EXECUTION_MODE)) {
             executionMode = RuntimeExecutionMode.valueOf(params.get(EXECUTION_MODE).toUpperCase());
-        }
+        }else {
+            System.out.println("Executing with default execution mode of batch ");
+            executionMode = RuntimeExecutionMode.BATCH;
 
-        return new CommandLineParser(inputs, output, watchInterval, executionMode, params);
+        }
+        return new CommandLineParser(iterations, executionMode, params);
     }
 
-    private final Path[] inputs;
-    private final Path output;
-    private final Duration discoveryInterval;
     private final RuntimeExecutionMode executionMode;
     private final MultipleParameterTool params;
 
     private CommandLineParser(
-            Path[] inputs,
-            Path output,
-            Duration discoveryInterval,
+            int iterations,
             RuntimeExecutionMode executionMode,
-            MultipleParameterTool params) {
-        this.inputs = inputs;
-        this.output = output;
-        this.discoveryInterval = discoveryInterval;
+            MultipleParameterTool params
+    ) {
+        this.iterations = iterations;
         this.executionMode = executionMode;
         this.params = params;
     }
 
-    public Optional<Path[]> getInputs() {
-        return Optional.ofNullable(inputs);
-    }
+    private int iterations;
 
-    public Optional<Duration> getDiscoveryInterval() {
-        return Optional.ofNullable(discoveryInterval);
-    }
-
-    public Optional<Path> getOutput() {
-        return Optional.ofNullable(output);
+    public Optional<Integer> getIterations() {
+        return Optional.ofNullable(iterations);
     }
 
     public RuntimeExecutionMode getExecutionMode() {
@@ -122,27 +96,4 @@ public class CommandLineParser extends ExecutionConfig.GlobalJobParameters {
         return params.toMap();
     }
 
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) {
-            return true;
-        }
-        if (o == null || getClass() != o.getClass()) {
-            return false;
-        }
-        if (!super.equals(o)) {
-            return false;
-        }
-        CommandLineParser cli = (CommandLineParser) o;
-        return Arrays.equals(inputs, cli.inputs)
-                && Objects.equals(output, cli.output)
-                && Objects.equals(discoveryInterval, cli.discoveryInterval);
-    }
-
-    @Override
-    public int hashCode() {
-        int result = Objects.hash(output, discoveryInterval);
-        result = 31 * result + Arrays.hashCode(inputs);
-        return result;
-    }
 }

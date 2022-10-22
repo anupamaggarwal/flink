@@ -17,24 +17,20 @@
 
 package org.apache.flink.connector.connectbridge.src;
 
-import com.google.common.collect.ImmutableMap;
-
-import org.apache.flink.api.common.accumulators.ListAccumulator;
+import org.apache.flink.api.common.RuntimeExecutionMode;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.connector.source.Boundedness;
 import org.apache.flink.api.java.tuple.Tuple2;
-import org.apache.flink.configuration.Configuration;
 import org.apache.flink.connector.connectbridge.src.reader.deserializer.ConnectValueOnlyDeserializationSchemaWrapper;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-
-import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
 import org.apache.flink.util.Collector;
 
+import com.google.common.collect.ImmutableMap;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.json.JSONObject;
 
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -42,17 +38,7 @@ import java.util.Map;
  */
 public class ConnectorBridgeMain {
 
-    private static Map<String, String> DATAGEN_CONFIG = ImmutableMap.<String, String>builder()
-            .put("connector.class", "io.confluent.kafka.connect.datagen.DatagenConnector")
-            .put("connector.task.class", "io.confluent.kafka.connect.datagen.DatagenTask")
-            .put("key.converter", "org.apache.kafka.connect.storage.StringConverter")
-            .put("value.converter", "org.apache.kafka.connect.json.JsonConverter")
-            .put("max.interval", "1000")
-            .put("kafka.topic", "Foobar")
-            .put("quickstart", "users")
-            .put("iterations", "10")
-            .put("tasks.max", "1")
-            .build();
+
     public static void main(String[] args) throws Exception {
         final CommandLineParser params = CommandLineParser.fromArgs(args);
 
@@ -60,34 +46,40 @@ public class ConnectorBridgeMain {
         // to building a Flink application.
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setRuntimeMode(params.getExecutionMode());
-        env.getConfig().setGlobalJobParameters(params);
+        env.getConfig();
+        int iterations = 10;
+        if(params.getIterations().isPresent())
+            iterations = params.getIterations().get();
+
+        Map<String, String> DATAGEN_CONFIG = ImmutableMap.<String, String>builder()
+                .put("connector.class", "io.confluent.kafka.connect.datagen.DatagenConnector")
+                .put("connector.task.class", "io.confluent.kafka.connect.datagen.DatagenTask")
+                .put("key.converter", "org.apache.kafka.connect.storage.StringConverter")
+                .put("value.converter", "org.apache.kafka.connect.json.JsonConverter")
+                .put("max.interval", "1000")
+                .put("kafka.topic", "Foobar")
+                .put("quickstart", "users")
+                .put("iterations", Integer.toString(iterations))
+                .put("tasks.max", "1")
+                .build();
 
         ConnectAdaptorSource<String> source =
                 new ConnectAdaptorSourceBuilder<String>(DATAGEN_CONFIG).setDeserializer(new ConnectValueOnlyDeserializationSchemaWrapper<>(
                                 StringDeserializer.class,DATAGEN_CONFIG.get("value.converter"))).
                         setBounded(Boundedness.BOUNDED).build();
 
-        env.setParallelism(Integer.parseInt(DATAGEN_CONFIG.get("tasks.max")));
         DataStream<String> stream =
                 env.fromSource(source, WatermarkStrategy.noWatermarks(), "testBasicRead");
-        int iterationsRequested = Integer.parseInt(DATAGEN_CONFIG.get("iterations"));
 
-        stream.addSink(
-                new RichSinkFunction<String>() {
-                    @Override
-                    public void open(Configuration parameters) {
-                        getRuntimeContext()
-                                .addAccumulator("result", new ListAccumulator<String>());
-                    }
+       DataStream<String> records =  stream.map(jsonRecord -> {
 
-                    @Override
-                    public void invoke(String value, Context context) {
-                        getRuntimeContext().getAccumulator("result").add(value);
-                    }
-                });
-        List<String> result = env.execute().getAccumulatorResult("result");
-        System.out.println("Printing values obtained from connector");
-        result.forEach(System.out::println);
+           JSONObject json = new JSONObject(jsonRecord);
+           String s = json.get("payload").toString();
+           return s;
+       });
+
+        records.print().name("sinkPrint");
+        env.execute("ConnectorBridge");
 
 
     }
