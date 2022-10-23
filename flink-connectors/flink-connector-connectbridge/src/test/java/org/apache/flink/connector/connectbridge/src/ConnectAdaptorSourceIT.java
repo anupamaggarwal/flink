@@ -86,8 +86,7 @@ public class ConnectAdaptorSourceIT {
         DataStream<String> stream =
                 env.fromSource(source, WatermarkStrategy.noWatermarks(), "testBasicRead");
 
-        int iterationsRequested = Integer.parseInt(DATAGEN_CONFIG.get("iterations"));
-        executeAndVerify(env, stream, iterationsRequested);
+        executeAndVerify(env, stream, NUM_ITERATIONS);
 
         Properties properties = new Properties();
         for(String k:KAFKA_WORKER_PROPERTIES.keySet())
