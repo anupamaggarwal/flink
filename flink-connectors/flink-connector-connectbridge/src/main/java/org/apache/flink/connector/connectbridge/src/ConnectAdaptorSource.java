@@ -33,19 +33,22 @@ public class ConnectAdaptorSource<RecordT>
     private final Boundedness boundedness;
     private final Map<String, String> connectorConfigs;
     private final ConnectRecordDeserializationSchema<RecordT> deserializationSchema;
+    private final boolean outputToKafka;
     private TypeInformation<RecordT> tTypeInformation;
 
 
     ConnectAdaptorSource(
             Map<String, String> connectorProperties,
             Boundedness boundedness,
-            ConnectRecordDeserializationSchema<RecordT> deserializer
+            ConnectRecordDeserializationSchema<RecordT> deserializer,
+            boolean outputToKafka
     ) {
 
         //check for required params per connector type
         this.deserializationSchema = deserializer;
         this.boundedness = boundedness;
         this.connectorConfigs = connectorProperties;
+        this.outputToKafka = outputToKafka;
     }
 
     @Override
@@ -57,7 +60,7 @@ public class ConnectAdaptorSource<RecordT>
     public SourceReader<RecordT, ConnectorAdaptorSplit> createReader(SourceReaderContext readerContext) throws Exception {
         //deserializationSchema.open(readerContext);
         return new ConnectAdaptorSourceReader<>(() -> new ConnectAdaptorSplitReader()
-                , new ConnectAdaptorSourceRecordEmitter<>(deserializationSchema),
+                , new ConnectAdaptorSourceRecordEmitter<>(deserializationSchema, connectorConfigs, outputToKafka),
                 readerContext.getConfiguration(), readerContext
         );
     }

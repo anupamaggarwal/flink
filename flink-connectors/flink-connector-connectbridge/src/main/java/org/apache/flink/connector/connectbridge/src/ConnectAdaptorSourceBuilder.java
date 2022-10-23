@@ -13,6 +13,8 @@ public class ConnectAdaptorSourceBuilder<OUT>{
     private Boundedness boundedness = Boundedness.CONTINUOUS_UNBOUNDED;
     private ConnectRecordDeserializationSchema<OUT>  deserializer = null;
 
+    private boolean outputToKafka=false;
+
     private TypeInformation<OUT>typeInformation;
 
     public ConnectAdaptorSourceBuilder(Map<String,String> connectorProperties){
@@ -30,10 +32,16 @@ public class ConnectAdaptorSourceBuilder<OUT>{
         return this;
     }
 
+    public ConnectAdaptorSourceBuilder<OUT> outputToKafka(boolean outputToKafka){
+        this.outputToKafka = outputToKafka;
+        return this;
+    }
+
+
 
     public ConnectAdaptorSource build(){
         return new ConnectAdaptorSource(connectorProperties,
-                boundedness, deserializer
+                boundedness, deserializer, outputToKafka
         );
     }
 }
