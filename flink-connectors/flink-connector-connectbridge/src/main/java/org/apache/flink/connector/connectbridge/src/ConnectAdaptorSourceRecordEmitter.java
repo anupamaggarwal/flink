@@ -78,6 +78,7 @@ final class ConnectAdaptorSourceRecordEmitter<T>
         //todo - need to handle config overrides
 
         Map<String, Object> producerProps = new HashMap<>();
+        producerProps.putAll(connectorConfigs);
         producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, connectorConfigs.get(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG));
         producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArraySerializer");
         producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArraySerializer");
@@ -86,6 +87,7 @@ final class ConnectAdaptorSourceRecordEmitter<T>
         producerProps.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, "1");
         producerProps.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, Integer.toString(Integer.MAX_VALUE));
         producerProps.put(ProducerConfig.CLIENT_ID_CONFIG, connectorConfigs.get(ProducerConfig.CLIENT_ID_CONFIG));
+        LOG.debug("Using producer props {}", producerProps);
          //add client metrics.context properties
        producer = new KafkaProducer<>(producerProps);
        initializeConverters();

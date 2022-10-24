@@ -21,13 +21,8 @@ import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.RuntimeExecutionMode;
 import org.apache.flink.api.java.utils.MultipleParameterTool;
 import org.apache.flink.configuration.ExecutionOptions;
-import org.apache.flink.core.fs.Path;
-import org.apache.flink.util.TimeUtils;
 
-import java.time.Duration;
-import java.util.Arrays;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalInt;
 
@@ -39,6 +34,8 @@ public class CommandLineParser extends ExecutionConfig.GlobalJobParameters {
     public static final String ITERATIONS = "iterations";
     public static final String EXECUTION_MODE = "execution-mode";
 
+    public static final String KAFKA_OUTPUT = "kafka-output";
+
     public static CommandLineParser fromArgs(String[] args) throws Exception {
         MultipleParameterTool params = MultipleParameterTool.fromArgs(args);
         int iterations=10;
@@ -47,7 +44,7 @@ public class CommandLineParser extends ExecutionConfig.GlobalJobParameters {
         } else {
             System.out.println("Executing example with default iterations of 10 data points");
         }
-
+        boolean kafkaOuptut = false;
 
         RuntimeExecutionMode executionMode = ExecutionOptions.RUNTIME_MODE.defaultValue();
         if (params.has(EXECUTION_MODE)) {
@@ -57,20 +54,37 @@ public class CommandLineParser extends ExecutionConfig.GlobalJobParameters {
             executionMode = RuntimeExecutionMode.BATCH;
 
         }
-        return new CommandLineParser(iterations, executionMode, params);
+
+        if (params.has(KAFKA_OUTPUT)) {
+            kafkaOuptut = Boolean.parseBoolean(params.get(KAFKA_OUTPUT));
+            System.out.println("Executing with kafka output " + kafkaOuptut);
+        }else {
+            kafkaOuptut = false;
+            System.out.println("Executing with kafka output " + kafkaOuptut);
+
+        }
+
+        return new CommandLineParser(iterations, executionMode, params, kafkaOuptut);
     }
 
     private final RuntimeExecutionMode executionMode;
     private final MultipleParameterTool params;
+    private final boolean outputToKafka;
+
+    public boolean shouldOutputToKafka() {
+        return outputToKafka;
+    }
 
     private CommandLineParser(
             int iterations,
             RuntimeExecutionMode executionMode,
-            MultipleParameterTool params
+            MultipleParameterTool params,
+            boolean kafkaOuptut
     ) {
         this.iterations = iterations;
         this.executionMode = executionMode;
         this.params = params;
+        this.outputToKafka= kafkaOuptut;
     }
 
     private int iterations;
