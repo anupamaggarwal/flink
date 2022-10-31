@@ -22,6 +22,8 @@ import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.table.api.TableResult;
 import org.apache.flink.table.api.internal.TableResultInternal;
 import org.apache.flink.table.client.SqlClientException;
+import org.apache.flink.table.client.cli.parser.SqlCommandParserImpl;
+import org.apache.flink.table.client.cli.parser.SqlMultiLineParser;
 import org.apache.flink.table.client.config.ResultMode;
 import org.apache.flink.table.client.config.SqlClientOptions;
 import org.apache.flink.table.client.gateway.Executor;
@@ -346,21 +348,16 @@ public class CliClient implements AutoCloseable {
         terminal.writer().println(CliStrings.messageInfo(CliStrings.MESSAGE_EXECUTE_FILE).toAnsi());
 
         // append line delimiter
-        InputStream inputStream =
-                new ByteArrayInputStream(SqlMultiLineParser.formatSqlFile(content).getBytes());
-        Terminal dumbTerminal = TerminalUtils.createDumbTerminal(inputStream, outputStream);
-        try {
+        try (InputStream inputStream =
+                        new ByteArrayInputStream(
+                                SqlMultiLineParser.formatSqlFile(content).getBytes());
+                Terminal dumbTerminal =
+                        TerminalUtils.createDumbTerminal(inputStream, outputStream)) {
             LineReader lineReader = createLineReader(dumbTerminal, false);
             return getAndExecuteStatements(lineReader, mode);
         } catch (Throwable e) {
             printExecutionException(e);
             return false;
-        } finally {
-            try {
-                dumbTerminal.close();
-            } catch (IOException e) {
-                // ignore
-            }
         }
     }
 
@@ -685,11 +682,6 @@ public class CliClient implements AutoCloseable {
 
     private void printInfo(String message) {
         terminal.writer().println(CliStrings.messageInfo(message).toAnsi());
-        terminal.flush();
-    }
-
-    private void printWarning(String message) {
-        terminal.writer().println(CliStrings.messageWarning(message).toAnsi());
         terminal.flush();
     }
 
