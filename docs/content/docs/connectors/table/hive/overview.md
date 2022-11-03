@@ -110,7 +110,7 @@ The following tables list all available bundled hive jars. You can pick one to t
 | Metastore version | Maven dependency                 | SQL Client JAR                                                                                                                                                                                                                                                                                                   |
 |:------------------|:---------------------------------|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | 2.3.0 - 2.3.9     | `flink-sql-connector-hive-2.3.9` | {{< stable >}}[Download](https://repo.maven.apache.org/maven2/org/apache/flink/flink-sql-connector-hive-2.3.9{{< scala_version >}}/{{< version >}}/flink-sql-connector-hive-2.3.9{{< scala_version >}}-{{< version >}}.jar) {{< /stable >}}{{< unstable >}} Only available for stable releases {{< /unstable >}} |
-| 3.0.0 - 3.1.2     | `flink-sql-connector-hive-3.1.2` | {{< stable >}}[Download](https://repo.maven.apache.org/maven2/org/apache/flink/flink-sql-connector-hive-3.1.2{{< scala_version >}}/{{< version >}}/flink-sql-connector-hive-3.1.2{{< scala_version >}}-{{< version >}}.jar) {{< /stable >}}{{< unstable >}} Only available for stable releases {{< /unstable >}} |
+| 3.0.0 - 3.1.3     | `flink-sql-connector-hive-3.1.3` | {{< stable >}}[Download](https://repo.maven.apache.org/maven2/org/apache/flink/flink-sql-connector-hive-3.1.3{{< scala_version >}}/{{< version >}}/flink-sql-connector-hive-3.1.3{{< scala_version >}}-{{< version >}}.jar) {{< /stable >}}{{< unstable >}} Only available for stable releases {{< /unstable >}} |
 
 #### User defined dependencies
 
@@ -270,6 +270,17 @@ Please find the required dependencies for different Hive major versions below.
 ```
 {{< /tab >}}
 {{< /tabs >}}
+
+#### Moving the planner jar
+
+Move the jar `flink-table-planner{{< scala_version >}}-{{< version >}}.jar` located in `FLINK_HOME/opt` to `FLINK_HOME/lib` and move out the jar `flink-table-planner-loader-{{< version >}}.jar` from `FLINK_HOME/lib`.
+Please refer to [FLINK-25128](https://issues.apache.org/jira/browse/FLINK-25128) for more details. You can use the following commands to complete the work:
+```shell
+mv $FLINK_HOME/opt/flink-table-planner{{< scala_version >}}-{{< version >}}.jar $FLINK_HOME/lib/flink-table-planner{{< scala_version >}}-{{< version >}}.jar
+mv $FLINK_HOME/lib/flink-table-planner-loader-{{< version >}}.jar $FLINK_HOME/opt/flink-table-planner-loader-{{< version >}}.jar
+```
+
+**NOTE**: Such extra planner jar moving is only needed when using [Hive dialect]({{< ref "docs/dev/table/hive-compatibility/hive-dialect/overview" >}}) or [HiveServer2 endpoint]({{< ref "docs/dev/table/hive-compatibility/hiveserver2" >}}), but this is the recommended setup for Hive integration. 
 
 ### Program maven
 
