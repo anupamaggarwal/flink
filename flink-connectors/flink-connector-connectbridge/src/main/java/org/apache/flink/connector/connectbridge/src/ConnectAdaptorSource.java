@@ -2,6 +2,7 @@ package org.apache.flink.connector.connectbridge.src;
 
 import com.google.common.collect.ImmutableMap;
 
+import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.connector.source.Boundedness;
 import org.apache.flink.api.connector.source.Source;
@@ -16,6 +17,8 @@ import org.apache.flink.connector.connectbridge.src.reader.deserializer.ConnectR
 import org.apache.flink.connector.connectbridge.src.split.ConnectAdaptorSplitSerializer;
 import org.apache.flink.connector.connectbridge.src.split.ConnectorAdaptorSplit;
 import org.apache.flink.core.io.SimpleVersionedSerializer;
+import org.apache.flink.metrics.MetricGroup;
+import org.apache.flink.util.UserCodeClassLoader;
 
 import java.util.Map;
 
@@ -59,6 +62,19 @@ public class ConnectAdaptorSource<RecordT>
     @Override
     public SourceReader<RecordT, ConnectorAdaptorSplit> createReader(SourceReaderContext readerContext) throws Exception {
         //deserializationSchema.open(readerContext);
+
+        deserializationSchema.open(
+                new DeserializationSchema.InitializationContext() {
+                    @Override
+                    public MetricGroup getMetricGroup() {
+                        return readerContext.metricGroup().addGroup("deserializer");
+                    }
+
+                    @Override
+                    public UserCodeClassLoader getUserCodeClassLoader() {
+                        return readerContext.getUserCodeClassLoader();
+                    }
+                });
         return new ConnectAdaptorSourceReader<>(() -> new ConnectAdaptorSplitReader()
                 , new ConnectAdaptorSourceRecordEmitter<>(deserializationSchema, connectorConfigs, outputToKafka),
                 readerContext.getConfiguration(), readerContext

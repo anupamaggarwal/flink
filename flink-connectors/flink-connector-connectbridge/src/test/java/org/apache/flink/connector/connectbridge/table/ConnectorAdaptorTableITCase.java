@@ -16,6 +16,8 @@ import org.junit.Test;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 public class ConnectorAdaptorTableITCase extends AbstractTestBase {
     protected StreamExecutionEnvironment env;
     protected StreamTableEnvironment tEnv;
@@ -44,24 +46,52 @@ public class ConnectorAdaptorTableITCase extends AbstractTestBase {
         final String createTable =
                 String.format(
                         "create table datagen (\n"
-                                + "  op STRING\n"
+                                + "  registertime BIGINT,\n"
+                                + "  userid STRING,\n"
+                                + "  regionid STRING,\n"
+                                + "  gender STRING\n"
                                 + ") with (\n"
                                 + "  'connector' = '%s',\n"
+                                + "  'connector.class' = '%s',\n"
+                                + "  'connector.task.class' = '%s',\n"
+                                + "  'key.converter' = '%s',\n"
+                                + "  'value.converter' = '%s',\n"
+                                + "  'header.converter' = '%s',\n"
+                                + "  'max.interval' = '%s',\n"
+                                + "  'kafka.topic' = '%s',\n"
+                                + "  'quickstart' = '%s',\n"
+                                + "  'iterations' = '%s',\n"
+                                + "  'tasks.max' = '%s',\n"
                                 + "  %s\n"
                                 + ")",
-                        ConnectAdaptorTableFactory.IDENTIFIER,
-                        formatOptions());
+                        ConnectAdaptorDynamicTableFactory.IDENTIFIER,
+                        "io.confluent.kafka.connect.datagen.DatagenConnector",
+                        "io.confluent.kafka.connect.datagen.DatagenTask",
+                        "org.apache.kafka.connect.storage.StringConverter",
+                        "org.apache.kafka.connect.json.JsonConverter",
+                        "org.apache.kafka.connect.storage.StringConverter",
+                        "1000",
+                        "topic1",
+                        "users",
+                        "10",
+                        "1",
+                        formatOptions()
+                );
 
         tEnv.executeSql(createTable);
         // ---------- Consume stream from Kafka -------------------
 
         String query =
                 "SELECT\n"
-                        + "  op\n"
+                        + "  registertime ,\n"
+                        + "  userid ,\n"
+                        + "  regionid ,\n"
+                        + "  gender \n"
                         + "FROM datagen\n";
-
         DataStream<RowData> result = tEnv.toAppendStream(tEnv.sqlQuery(query), RowData.class);
-        TestingSinkFunction sink = new TestingSinkFunction(2);
+        System.out.println("Printing the following rows " + result.print());
+
+        TestingSinkFunction sink = new TestingSinkFunction(20);
         result.addSink(sink).setParallelism(1);
 
         try {
@@ -72,8 +102,11 @@ public class ConnectorAdaptorTableITCase extends AbstractTestBase {
                 throw e;
             }
         }
+       // assertThat(TestingSinkFunction.rows).isEqualTo(10);
+
 
     }
+
     private static final class TestingSinkFunction implements SinkFunction<RowData> {
 
         private static final long serialVersionUID = 455430015321124493L;
@@ -88,6 +121,7 @@ public class ConnectorAdaptorTableITCase extends AbstractTestBase {
 
         @Override
         public void invoke(RowData value, Context context) {
+            System.out.println("Adding value to row " + value.toString());
             rows.add(value.toString());
             if (rows.size() >= expectedSize) {
                 // job finish
@@ -95,6 +129,7 @@ public class ConnectorAdaptorTableITCase extends AbstractTestBase {
             }
         }
     }
+
     private String formatOptions() {
         return String.format("'format' = '%s'", format);
     }
