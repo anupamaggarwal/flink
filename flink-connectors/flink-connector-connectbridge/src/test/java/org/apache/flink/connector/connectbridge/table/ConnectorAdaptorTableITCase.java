@@ -2,6 +2,7 @@ package org.apache.flink.connector.connectbridge.table;
 
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.datastream.DataStreamSink;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.sink.SinkFunction;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
@@ -16,7 +17,6 @@ import org.junit.Test;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.assertj.core.api.Assertions.assertThat;
 
 public class ConnectorAdaptorTableITCase extends AbstractTestBase {
     protected StreamExecutionEnvironment env;
@@ -90,21 +90,8 @@ public class ConnectorAdaptorTableITCase extends AbstractTestBase {
                         + "FROM datagen\n";
         DataStream<RowData> result = tEnv.toAppendStream(tEnv.sqlQuery(query), RowData.class);
         System.out.println("Printing the following rows " + result.print());
-
-        TestingSinkFunction sink = new TestingSinkFunction(20);
-        result.addSink(sink).setParallelism(1);
-
-        try {
-            env.execute("Job-2");
-        } catch (Throwable e) {
-            if (!isCausedByJobFinished(e)) {
-                // re-throw
-                throw e;
-            }
-        }
-       // assertThat(TestingSinkFunction.rows).isEqualTo(10);
-
-
+        DataStreamSink<RowData> sinkRecords= result.print();
+        env.execute("Datagen record print");
     }
 
     private static final class TestingSinkFunction implements SinkFunction<RowData> {
