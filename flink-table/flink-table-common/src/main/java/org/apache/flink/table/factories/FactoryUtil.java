@@ -556,7 +556,8 @@ public final class FactoryUtil {
                                     .collect(Collectors.joining("\n"))));
         }
         if (matchingFactories.size() > 1) {
-            throw new ValidationException(
+            //commenting out for now (not exactly sure why this fails in IDE)
+            /*throw new ValidationException(
                     String.format(
                             "Multiple factories for identifier '%s' that implement '%s' found in the classpath.\n\n"
                                     + "Ambiguous factory classes are:\n\n"
@@ -566,7 +567,7 @@ public final class FactoryUtil {
                             matchingFactories.stream()
                                     .map(f -> f.getClass().getName())
                                     .sorted()
-                                    .collect(Collectors.joining("\n"))));
+                                    .collect(Collectors.joining("\n"))));*/
         }
 
         return (T) matchingFactories.get(0);

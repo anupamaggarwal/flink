@@ -77,7 +77,7 @@ public class KafkaTableITCase extends KafkaTableTestBase {
 
     @Parameterized.Parameters(name = "format = {0}")
     public static Collection<String> parameters() {
-        return Arrays.asList(JSON_FORMAT, AVRO_FORMAT, CSV_FORMAT);
+        return Arrays.asList(JSON_FORMAT);
     }
 
     @Before
@@ -85,6 +85,84 @@ public class KafkaTableITCase extends KafkaTableTestBase {
         // we have to use single parallelism,
         // because we will count the messages in sink to terminate the job
         env.setParallelism(1);
+    }
+
+
+    @Test
+    public void testKafkaSource() throws Exception {
+        // we always use a different topic name for each parameterized topic,
+        // in order to make sure the topic can be created.
+        final String topic = "tstopic_" + format;
+        createTestTopic(topic, 1, 1);
+
+        // ---------- Produce an event time stream into Kafka -------------------
+        String groupId = getStandardProps().getProperty("group.id");
+        String bootstraps = getBootstrapServers();
+
+        final String createTable =
+                String.format(
+                        "create table kafka (\n"
+                                + "  `computed-price` as price + 1.0,\n"
+                                + "  price decimal(38, 18),\n"
+                                + "  currency string,\n"
+                                + "  log_date date,\n"
+                                + "  log_time time(3),\n"
+                                + "  log_ts timestamp(3),\n"
+                                + "  ts as log_ts + INTERVAL '1' SECOND,\n"
+                                + "  watermark for ts as ts\n"
+                                + ") with (\n"
+                                + "  'connector' = '%s',\n"
+                                + "  'topic' = '%s',\n"
+                                + "  'properties.bootstrap.servers' = '%s',\n"
+                                + "  'properties.group.id' = '%s',\n"
+                                + "  'scan.startup.mode' = 'earliest-offset',\n"
+                                + "  %s\n"
+                                + ")",
+                        KafkaDynamicTableFactory.IDENTIFIER,
+                        topic,
+                        bootstraps,
+                        groupId,
+                        formatOptions());
+
+        tEnv.executeSql(createTable);
+
+
+        String query =
+                "SELECT\n"
+                        + "  CAST(TUMBLE_END(ts, INTERVAL '5' SECOND) AS VARCHAR),\n"
+                        + "  CAST(MAX(log_date) AS VARCHAR),\n"
+                        + "  CAST(MAX(log_time) AS VARCHAR),\n"
+                        + "  CAST(MAX(ts) AS VARCHAR),\n"
+                        + "  COUNT(*),\n"
+                        + "  CAST(MAX(price) AS DECIMAL(10, 2))\n"
+                        + "FROM kafka\n"
+                        + "GROUP BY TUMBLE(ts, INTERVAL '5' SECOND)";
+
+        DataStream<RowData> result = tEnv.toAppendStream(tEnv.sqlQuery(query), RowData.class);
+        TestingSinkFunction sink = new TestingSinkFunction(2);
+        result.addSink(sink).setParallelism(1);
+
+        try {
+            env.execute("Job_2");
+        } catch (Throwable e) {
+            // we have to use a specific exception to indicate the job is finished,
+            // because the registered Kafka source is infinite.
+            if (!isCausedByJobFinished(e)) {
+                // re-throw
+                throw e;
+            }
+        }
+
+        List<String> expected =
+                Arrays.asList(
+                        "+I(2019-12-12 00:00:05.000,2019-12-12,00:00:03,2019-12-12 00:00:04.004,3,50.00)",
+                        "+I(2019-12-12 00:00:10.000,2019-12-12,00:00:05,2019-12-12 00:00:06.006,2,5.33)");
+
+        assertThat(TestingSinkFunction.rows).isEqualTo(expected);
+
+        // ------------- cleanup -------------------
+
+        deleteTestTopic(topic);
     }
 
     @Test

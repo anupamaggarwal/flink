@@ -90,7 +90,6 @@ public class ConnectorAdaptorTableITCase extends AbstractTestBase {
                         + "FROM datagen\n";
         DataStream<RowData> result = tEnv.toAppendStream(tEnv.sqlQuery(query), RowData.class);
         System.out.println("Printing the following rows " + result.print());
-        DataStreamSink<RowData> sinkRecords= result.print();
         env.execute("Datagen record print");
     }
 

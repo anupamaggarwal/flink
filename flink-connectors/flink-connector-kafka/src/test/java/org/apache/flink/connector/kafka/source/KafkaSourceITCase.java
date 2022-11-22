@@ -147,7 +147,7 @@ public class KafkaSourceITCase {
         }
 
         @ParameterizedTest(name = "Object reuse in deserializer = {arguments}")
-        @ValueSource(booleans = {false, true})
+        @ValueSource(booleans = {true})
         public void testBasicRead(boolean enableObjectReuse) throws Exception {
             KafkaSource<PartitionAndValue> source =
                     KafkaSource.<PartitionAndValue>builder()

@@ -122,7 +122,7 @@ public class ConnectAdaptorSourceEnumerator
         );
         this.context.assignSplit(new ConnectorAdaptorSplit(
                 "task-" + subtaskId,
-                this.taskProperties.get(subtaskId)
+                this.taskProperties.get(0)
         ), subtaskId);
         this.context.signalNoMoreSplits(subtaskId);
     }
