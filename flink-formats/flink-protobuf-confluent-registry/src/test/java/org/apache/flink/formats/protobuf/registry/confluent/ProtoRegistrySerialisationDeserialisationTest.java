@@ -169,11 +169,11 @@ public class ProtoRegistrySerialisationDeserialisationTest {
         GenericRowData row = GenericRowData.of(1L, StringData.fromString("dummyName"), 10);
         row.setRowKind(RowKind.INSERT);
         byte[] payload = protoSerializer.serialize(row);
-        Map<String, ?> SR_CONFIG =
+        Map<String, ?> schemaRegistryConfig =
                 Collections.singletonMap(
                         AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, "localhost");
         ProtobufConverter protoConverter = new ProtobufConverter(client);
-        protoConverter.configure(SR_CONFIG, false); // out schema registry version
+        protoConverter.configure(schemaRegistryConfig, false); // out schema registry version
         SchemaAndValue connectData = protoConverter.toConnectData(TEST_TOPIC, payload);
         Struct value = (Struct) connectData.value();
         assertEquals("dummyName", value.get("name"));
