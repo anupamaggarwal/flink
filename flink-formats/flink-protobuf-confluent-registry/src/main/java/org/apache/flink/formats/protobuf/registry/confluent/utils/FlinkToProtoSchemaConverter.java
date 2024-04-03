@@ -18,6 +18,8 @@
 
 package org.apache.flink.formats.protobuf.registry.confluent.utils;
 
+import com.google.protobuf.DescriptorProtos;
+
 import org.apache.flink.table.types.logical.ArrayType;
 import org.apache.flink.table.types.logical.DecimalType;
 import org.apache.flink.table.types.logical.IntType;
@@ -50,6 +52,7 @@ import io.confluent.protobuf.type.Decimal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Stream;
@@ -89,6 +92,44 @@ import java.util.stream.Stream;
  */
 public class FlinkToProtoSchemaConverter {
 
+
+
+
+    public static Descriptor fromFlinkSchema(RowType rowTypeUpdated, String rowName,
+                                             String packageName,
+                                             Map<String,Integer>nameToTag) {
+
+        return fromFlinkSchemaUpdated(rowTypeUpdated,rowName,packageName,nameToTag);
+    }
+
+    public static Descriptor fromFlinkSchemaUpdated(
+            RowType logicalType, String rowName, String packageName, Map<String, Integer> nameToTag
+    ) {
+        try {
+            final Set<String> dependencies = new TreeSet<>();
+            final DescriptorProto builder = fromRowTypeUpdated(logicalType, rowName, dependencies,nameToTag);
+            final FileDescriptorProto fileDescriptorProto =
+                    FileDescriptorProto.newBuilder()
+                            .addMessageType(builder)
+                            .setPackage(packageName)
+                            .setSyntax("proto3")
+                            .addAllDependency(dependencies)
+                            .build();
+            return FileDescriptor.buildFrom(
+                            fileDescriptorProto,
+                            Stream.of(
+                                            Date.getDescriptor(),
+                                            TimeOfDay.getDescriptor(),
+                                            Timestamp.getDescriptor(),
+                                            Decimal.getDescriptor())
+                                    .map(Descriptor::getFile)
+                                    .toArray(FileDescriptor[]::new))
+                    .getFile()
+                    .findMessageTypeByName(rowName);
+        } catch (DescriptorValidationException e) {
+            throw new RuntimeException(e);
+        }
+    }
     /**
      * Converts a Flink's logical type into a Protobuf descriptor. Uses Kafka Connect logic to store
      * types that are not natively supported.
@@ -125,7 +166,29 @@ public class FlinkToProtoSchemaConverter {
             RowType rowType, String rowName, String packageName) {
         return new ProtobufSchema(fromFlinkSchema(rowType, rowName, packageName));
     }
+    private static DescriptorProto fromRowTypeUpdated(
+            RowType logicalType, String rowName, Set<String> dependencies, Map<String,Integer>tagIndex) {
+        final Builder builder = DescriptorProto.newBuilder();
 
+        builder.setName(rowName);
+        final List<DescriptorProto> nestedRows = new ArrayList<>();
+        final List<RowField> fields = logicalType.getFields();
+        for (int i = 0; i < logicalType.getFieldCount(); i++) {
+            final RowField field = fields.get(i);
+            FieldDescriptorProto p =  fromRowFieldUpdated(
+                    field.getType(),
+                    field.getName(),
+                    i + 1,
+                    nestedRows,
+                    dependencies,
+                    false, tagIndex, rowName);
+            System.out.println("TypeName is " + p.getTypeName() + "[" + p.getName() +"]"+ "  Number " + p.getNumber() );
+            builder.addField(p);
+
+        }
+        builder.addAllNestedType(nestedRows);
+        return builder.build();
+    }
     private static DescriptorProto fromRowType(
             RowType logicalType, String rowName, Set<String> dependencies) {
         final Builder builder = DescriptorProto.newBuilder();
@@ -147,6 +210,8 @@ public class FlinkToProtoSchemaConverter {
         builder.addAllNestedType(nestedRows);
         return builder.build();
     }
+
+
 
     private static FieldDescriptorProto fromRowField(
             LogicalType logicalType,
@@ -319,6 +384,194 @@ public class FlinkToProtoSchemaConverter {
         }
     }
 
+
+    private static FieldDescriptorProto fromRowFieldUpdated(
+            LogicalType logicalType,
+            String fieldName,
+            int fieldIndex,
+            List<DescriptorProto> nestedRows,
+            Set<String> dependencies,
+            boolean isArray, Map<String,Integer>tagIndex, String rowName) {
+        final FieldDescriptorProto.Builder builder = FieldDescriptorProto.newBuilder();
+
+
+        builder.setName(fieldName);
+        String fieldNameToUse= "io.confluent.generated.row."+fieldName;
+        String fieldNameToUse1= "io.confluent.generated.row."+rowName+"."+fieldName;
+
+        if(tagIndex.containsKey(fieldNameToUse1) ){
+            builder.setNumber(tagIndex.get(fieldNameToUse1));
+        }else if(tagIndex.containsKey(fieldNameToUse)){
+            builder.setNumber(tagIndex.get(fieldNameToUse));
+        }
+        else{
+            builder.setNumber(10+fieldIndex);
+        }
+
+        if (isArray) {
+            builder.setLabel(Label.LABEL_REPEATED);
+        } else if (!logicalType.isNullable()) {
+            builder.setLabel(Label.LABEL_REQUIRED);
+        } else {
+            builder.setProto3Optional(logicalType.isNullable());
+        }
+
+        switch (logicalType.getTypeRoot()) {
+            case BOOLEAN:
+                builder.setType(Type.TYPE_BOOL);
+                return builder.build();
+            case TINYINT:
+                builder.setType(Type.TYPE_INT32);
+                builder.setOptions(
+                        FieldOptions.newBuilder()
+                                .setExtension(
+                                        MetaProto.fieldMeta,
+                                        Meta.newBuilder()
+                                                .putParams(
+                                                        CommonConstants.CONNECT_TYPE_PROP,
+                                                        CommonConstants.CONNECT_TYPE_INT8)
+                                                .build())
+                                .build());
+                return builder.build();
+            case SMALLINT:
+                builder.setType(Type.TYPE_INT32);
+                builder.setOptions(
+                        FieldOptions.newBuilder()
+                                .setExtension(
+                                        MetaProto.fieldMeta,
+                                        Meta.newBuilder()
+                                                .putParams(
+                                                        CommonConstants.CONNECT_TYPE_PROP,
+                                                        CommonConstants.CONNECT_TYPE_INT16)
+                                                .build())
+                                .build());
+                return builder.build();
+            case INTEGER:
+                builder.setType(Type.TYPE_INT32);
+                return builder.build();
+            case BIGINT:
+                builder.setType(Type.TYPE_INT64);
+                return builder.build();
+            case FLOAT:
+                builder.setType(Type.TYPE_FLOAT);
+                return builder.build();
+            case DOUBLE:
+                builder.setType(Type.TYPE_DOUBLE);
+                return builder.build();
+            case CHAR:
+            case VARCHAR:
+                builder.setType(Type.TYPE_STRING);
+                return builder.build();
+            case BINARY:
+            case VARBINARY:
+                builder.setType(Type.TYPE_BYTES);
+                return builder.build();
+            case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+                builder.setType(Type.TYPE_MESSAGE);
+                builder.setTypeName(makeItTopLevelScoped(CommonConstants.PROTOBUF_TIMESTAMP_TYPE));
+                dependencies.add(CommonConstants.PROTOBUF_TIMESTAMP_LOCATION);
+                return builder.build();
+            case DATE:
+                builder.setType(Type.TYPE_MESSAGE);
+                builder.setTypeName(makeItTopLevelScoped(CommonConstants.PROTOBUF_DATE_TYPE));
+                dependencies.add(CommonConstants.PROTOBUF_DATE_LOCATION);
+                return builder.build();
+            case TIME_WITHOUT_TIME_ZONE:
+                builder.setType(Type.TYPE_MESSAGE);
+                builder.setTypeName(makeItTopLevelScoped(CommonConstants.PROTOBUF_TIME_TYPE));
+                dependencies.add(CommonConstants.PROTOBUF_TIME_LOCATION);
+                return builder.build();
+            case DECIMAL:
+                DecimalType decimalType = (DecimalType) logicalType;
+                builder.setType(Type.TYPE_MESSAGE);
+                builder.setOptions(
+                        FieldOptions.newBuilder()
+                                .setExtension(
+                                        MetaProto.fieldMeta,
+                                        Meta.newBuilder()
+                                                .putParams(
+                                                        CommonConstants.PROTOBUF_PRECISION_PROP,
+                                                        String.valueOf(decimalType.getPrecision()))
+                                                .putParams(
+                                                        CommonConstants.PROTOBUF_SCALE_PROP,
+                                                        String.valueOf(decimalType.getScale()))
+                                                .build())
+                                .build());
+                builder.setTypeName(makeItTopLevelScoped(CommonConstants.PROTOBUF_DECIMAL_TYPE));
+                builder.getTypeName();
+                dependencies.add(CommonConstants.PROTOBUF_DECIMAL_LOCATION);
+                return builder.build();
+            case ROW:
+            {
+                // field name uniqueness should suffice for type naming. Each type is scoped to
+                // the enclosing Row. If a Row is nested within a nested Row, those two won't
+                // have collisions. Thus it is possible to have:
+                // message A {
+                //  b_Row b
+                //  message b_Row {
+                //    b_Row b
+                //    message b_Row {
+                //      int32 c;
+                //    }
+                //  }
+                // }
+                final String typeName = fieldName + "_Row";
+                final DescriptorProto nestedRowDescriptor =
+                        fromRowTypeUpdated((RowType) logicalType, typeName, dependencies,tagIndex);
+                nestedRows.add(nestedRowDescriptor);
+                builder.setType(Type.TYPE_MESSAGE);
+                builder.setTypeName(typeName);
+                if(tagIndex.containsKey("io.confluent.generated.row."+tagIndex)){
+                    builder.setNumber(tagIndex.get("io.confluent.generated.row."+tagIndex));
+                }
+                    return builder.build();
+            }
+            case MAP:
+            {
+                final MapType mapType = (MapType) logicalType;
+                return createMapLikeField(
+                        fieldName,
+                        fieldIndex,
+                        nestedRows,
+                        dependencies,
+                        mapType.getKeyType(),
+                        mapType.getValueType(),
+                        mapType.isNullable());
+            }
+            case ARRAY:
+                return fromRowFieldUpdated(
+                        ((ArrayType) logicalType).getElementType(),
+                        fieldName,
+                        fieldIndex,
+                        nestedRows,
+                        dependencies,
+                        true,tagIndex,rowName);
+            case MULTISET:
+            {
+                final MultisetType multisetType = (MultisetType) logicalType;
+                return createMapLikeField(
+                        fieldName,
+                        fieldIndex,
+                        nestedRows,
+                        dependencies,
+                        multisetType.getElementType(),
+                        new IntType(false),
+                        multisetType.isNullable());
+            }
+            case TIMESTAMP_WITHOUT_TIME_ZONE:
+            case TIMESTAMP_WITH_TIME_ZONE:
+            case INTERVAL_YEAR_MONTH:
+            case INTERVAL_DAY_TIME:
+            case DISTINCT_TYPE:
+            case STRUCTURED_TYPE:
+            case SYMBOL:
+            case UNRESOLVED:
+            case RAW:
+            default:
+                throw new UnsupportedOperationException(
+                        "Unsupported to derive Schema for type: " + logicalType);
+        }
+    }
     private static String makeItTopLevelScoped(String type) {
         // we scope types to the top level by prepending them with a dot. otherwise protobuf looks
         // for the types in the current scope. This makes it especially difficult if the current
@@ -363,4 +616,5 @@ public class FlinkToProtoSchemaConverter {
         builder.clearProto3Optional();
         return builder.build();
     }
+
 }

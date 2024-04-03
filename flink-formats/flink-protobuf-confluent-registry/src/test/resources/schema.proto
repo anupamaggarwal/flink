@@ -1,0 +1,9 @@
+syntax = "proto3";
+package io.confluent.generated;
+
+message Person {
+   string Name = 1;
+   string city=4;
+   int32 salary = 2;
+   bool isMarried = 3;
+}
