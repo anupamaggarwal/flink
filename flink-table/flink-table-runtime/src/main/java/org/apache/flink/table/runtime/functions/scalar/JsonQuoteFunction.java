@@ -84,8 +84,7 @@ public class JsonQuoteFunction extends BuiltInScalarFunction {
             return null;
         }
         BinaryStringData bs = (BinaryStringData) input;
-        String inputVal = String.format("%s", bs);
-        String stringWithQuotes = escape(inputVal);
+        String stringWithQuotes = escape(bs.toString());
         String outputVal = String.format("\"%s\"", stringWithQuotes);
         return new BinaryStringData(outputVal);
     }

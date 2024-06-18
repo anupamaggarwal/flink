@@ -801,17 +801,17 @@ class JsonFunctionsITCase extends BuiltInFunctionTestBase {
                         .testResult(
                                 $("f7").jsonUnquote(),
                                 "JSON_UNQUOTE(f7)",
-                                "[\"\\t2\"]",
+                                "[\"\t2\"]",
                                 STRING().notNull())
                         .testResult(
                                 $("f8").jsonUnquote(),
                                 "JSON_UNQUOTE(f8)",
-                                "This is a \\t test \\n with special characters: \\b \\f \\r A",
+                                "This is a \t test \n with special characters: \b \f \r A",
                                 STRING().notNull())
                         .testResult(
                                 $("f9").jsonUnquote(),
                                 "JSON_UNQUOTE(f9)",
-                                "[\"This is a \\t test \\n with special characters: \\b \\f \\r A\"]",
+                                "[\"This is a \t test \n with special characters: \b \f \r A\"]",
                                 STRING().notNull()));
     }
 
