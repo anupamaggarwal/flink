@@ -23,17 +23,60 @@ import org.apache.flink.table.data.binary.BinaryStringData;
 import org.apache.flink.table.functions.BuiltInFunctionDefinitions;
 import org.apache.flink.table.functions.SpecializedFunction.SpecializedContext;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-
 import javax.annotation.Nullable;
 
 /** Implementation of {@link BuiltInFunctionDefinitions#JSON_QUOTE}. */
 @Internal
 public class JsonQuoteFunction extends BuiltInScalarFunction {
-    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     public JsonQuoteFunction(SpecializedContext context) {
         super(BuiltInFunctionDefinitions.JSON_QUOTE, context);
+    }
+
+    public static String escape(String input) {
+        StringBuilder outputStr = new StringBuilder();
+
+        for (int i = 0; i < input.length(); i++) {
+            char ch = input.charAt(i);
+            switch (ch) {
+                case '"':
+                    outputStr.append("\\\"");
+                    break;
+                case '\\':
+                    outputStr.append("\\\\");
+                    break;
+                case '/':
+                    outputStr.append("\\/");
+                    break;
+                case '\b':
+                    outputStr.append("\\b");
+                    break;
+                case '\f':
+                    outputStr.append("\\f");
+                    break;
+                case '\n':
+                    outputStr.append("\\n");
+                    break;
+                case '\r':
+                    outputStr.append("\\r");
+                    break;
+                case '\t':
+                    outputStr.append("\\t");
+                    break;
+                default:
+                    outputStr.append(toHexOrStr(ch));
+            }
+        }
+
+        return input;
+    }
+
+    public static String toHexOrStr(char ch) {
+        if (ch >= 127) {
+            return String.format("\\u%04x", (int) ch);
+        } else {
+            return String.valueOf(ch);
+        }
     }
 
     public @Nullable Object eval(Object input) {
@@ -41,7 +84,9 @@ public class JsonQuoteFunction extends BuiltInScalarFunction {
             return null;
         }
         BinaryStringData bs = (BinaryStringData) input;
-        String stringWithQuotes = String.format("\"%s\"", bs);
-        return new BinaryStringData(stringWithQuotes);
+        String inputVal = String.format("%s", bs);
+        String stringWithQuotes = escape(inputVal);
+        String outputVal = String.format("\"%s\"", stringWithQuotes);
+        return new BinaryStringData(outputVal);
     }
 }
