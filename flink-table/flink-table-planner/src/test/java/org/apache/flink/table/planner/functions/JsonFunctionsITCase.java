@@ -729,7 +729,7 @@ class JsonFunctionsITCase extends BuiltInFunctionTestBase {
                         .testResult(
                                 $("f3").jsonQuote(),
                                 "JSON_QUOTE(f3)",
-                                "\"This is a \\t test \\n with special characters: \\\" \\\\ \\b \\f \\r \\u0041\"",
+                                "\"This is a \\t test \\n with special characters: \\\" \\\\ \\b \\f \\r A\"",
                                 STRING().notNull())
                         .testResult(
                                 $("f4").jsonQuote(),
@@ -765,7 +765,7 @@ class JsonFunctionsITCase extends BuiltInFunctionTestBase {
                                 "\"",
                                 "\"[\"\\t\\u0032\"]\"",
                                 "\"This is a \\t test \\n with special characters: \\b \\f \\r \\u0041\"",
-                                "\"[\"This is a \\t test \\n with special characters: \\b \\f \\r \\u0041\"]\"")
+                                "\"[\"This is a \\t test \\n with special characters: \\b \\f \\r A\"]\"")
                         .andDataTypes(
                                 STRING().notNull(),
                                 STRING().notNull(),
