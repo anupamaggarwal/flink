@@ -25,11 +25,7 @@ import org.apache.flink.table.functions.SpecializedFunction.SpecializedContext;
 import org.apache.flink.table.runtime.functions.SqlJsonUtils;
 import org.apache.flink.util.FlinkRuntimeException;
 
-import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper;
-
 import javax.annotation.Nullable;
-
-import java.io.IOException;
 
 /** Implementation of {@link BuiltInFunctionDefinitions#JSON_UNQUOTE}. */
 @Internal
@@ -43,24 +39,24 @@ public class JsonUnquoteFunction extends BuiltInScalarFunction {
        return SqlJsonUtils.isJsonValue(jsonInString);
     }
 
-    private String unescape(String inputStr) {
+    private String unquote(String inputStr) {
 
         StringBuilder result = new StringBuilder();
         int i = 1;
         while (i < inputStr.length() - 1) {
             if (inputStr.charAt(i) == '\\' && i + 1 < inputStr.length()) {
                 i++; // move to the next char
-                char nextChar = inputStr.charAt(i++);
+                char charAfterBackSlash = inputStr.charAt(i++);
 
-                switch (nextChar) {
+                switch (charAfterBackSlash) {
                     case '"':
-                        result.append(nextChar);
+                        result.append(charAfterBackSlash);
                         break;
                     case '\\':
-                        result.append(nextChar);
+                        result.append(charAfterBackSlash);
                         break;
                     case '/':
-                        result.append(nextChar);
+                        result.append(charAfterBackSlash);
                         break;
                     case 'b':
                         result.append('\b');
@@ -78,13 +74,12 @@ public class JsonUnquoteFunction extends BuiltInScalarFunction {
                         result.append('\t');
                         break;
                     case 'u':
-                        result.append(fromUnicodeEscapedRepr(inputStr, i));
+                        result.append(fromUnicodeLiteral(inputStr, i));
                         i = i + 4;
                         break;
                     default:
-                        throw new IllegalArgumentException("Unterminated character");
+                        throw new RuntimeException("Illegal escape sequence: \\"+charAfterBackSlash);
                 }
-
             } else {
                 result.append(inputStr.charAt(i));
                 i++;
@@ -93,17 +88,17 @@ public class JsonUnquoteFunction extends BuiltInScalarFunction {
         return result.toString();
     }
 
-    private static String fromUnicodeEscapedRepr(String input, int curPos) {
+    private static String fromUnicodeLiteral(String input, int curPos) {
 
         StringBuilder number = new StringBuilder();
         if (curPos + 4 > input.length()) {
-            throw new RuntimeException("Not enough unicode digits! ");
+            throw new RuntimeException("Not enough unicode digits!");
         }
-        for (char x : input.substring(curPos, curPos + 4).toCharArray()) {
-            if (!Character.isLetterOrDigit(x)) {
+        for (char ch : input.substring(curPos, curPos + 4).toCharArray()) {
+            if (!Character.isLetterOrDigit(ch)) {
                 throw new RuntimeException("Bad character in unicode escape.");
             }
-            number.append(Character.toLowerCase(x));
+            number.append(Character.toLowerCase(ch));
         }
         int code = Integer.parseInt(number.toString(), 16);
         return String.valueOf((char) code);
@@ -118,9 +113,9 @@ public class JsonUnquoteFunction extends BuiltInScalarFunction {
             BinaryStringData bs = (BinaryStringData) input;
             String inputStr = bs.toString();
             if (isValidJsonVal(inputStr)) {
-
-                return new BinaryStringData(unescape(inputStr));
+                return new BinaryStringData(unquote(inputStr));
             } else {
+                // return input as is since JSON is invalid
                 return new BinaryStringData(inputStr);
             }
         } catch (Throwable t) {

@@ -33,7 +33,7 @@ public class JsonQuoteFunction extends BuiltInScalarFunction {
         super(BuiltInFunctionDefinitions.JSON_QUOTE, context);
     }
 
-    public static String escape(String input) {
+    private static String quote(String input) {
         StringBuilder outputStr = new StringBuilder();
 
         for (int i = 0; i < input.length(); i++) {
@@ -64,16 +64,15 @@ public class JsonQuoteFunction extends BuiltInScalarFunction {
                     outputStr.append("\\t");
                     break;
                 default:
-                    outputStr.append(toHexOrStr(ch));
+                    outputStr.append(unicodeLiteralOrStr(ch));
             }
         }
-
         return outputStr.toString();
     }
 
-    public static String toHexOrStr(char ch) {
-        if (ch >= 127) {
-            return String.format("\\u%04x", (int) ch);
+    public static String unicodeLiteralOrStr(char ch) {
+        if (ch > 127) {
+            return String.format("\\u%04x",ch);
         } else {
             return String.valueOf(ch);
         }
@@ -84,8 +83,8 @@ public class JsonQuoteFunction extends BuiltInScalarFunction {
             return null;
         }
         BinaryStringData bs = (BinaryStringData) input;
-        String stringWithQuotes = escape(bs.toString());
-        String outputVal = String.format("\"%s\"", stringWithQuotes);
+        String stringWithoutQuotes = quote(bs.toString());
+        String outputVal = String.format("\"%s\"", stringWithoutQuotes);
         return new BinaryStringData(outputVal);
     }
 }
