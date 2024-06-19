@@ -68,7 +68,7 @@ public class JsonQuoteFunction extends BuiltInScalarFunction {
             }
         }
 
-        return input;
+        return outputStr.toString();
     }
 
     public static String toHexOrStr(char ch) {

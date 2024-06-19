@@ -705,8 +705,10 @@ class JsonFunctionsITCase extends BuiltInFunctionTestBase {
                                 "\"null\"",
                                 "[1, 2, 3]",
                                 "This is a \t test \n with special characters: \" \\ \b \f \r \u0041",
-                                "\"special\": \"\\b\\f\\r\"")
+                                "\"special\": \"\\b\\f\\r\"",
+                                "\tThis quote\\ \" /")
                         .andDataTypes(
+                                STRING().notNull(),
                                 STRING().notNull(),
                                 STRING().notNull(),
                                 STRING().notNull(),
@@ -717,7 +719,7 @@ class JsonFunctionsITCase extends BuiltInFunctionTestBase {
                         .testResult(
                                 $("f1").jsonQuote(),
                                 "JSON_QUOTE(f1)",
-                                "\"\"null\"\"",
+                                "\"\\\"null\\\"\"",
                                 STRING().notNull())
                         .testResult(
                                 $("f2").jsonQuote(),
@@ -727,13 +729,19 @@ class JsonFunctionsITCase extends BuiltInFunctionTestBase {
                         .testResult(
                                 $("f3").jsonQuote(),
                                 "JSON_QUOTE(f3)",
-                                "\"This is a \t test \n with special characters: \" \\ \b \f \r A\"",
+                                "\"This is a \\t test \\n with special characters: \\\" \\\\ \\b \\f \\r \\u0041\"",
                                 STRING().notNull())
                         .testResult(
                                 $("f4").jsonQuote(),
                                 "JSON_QUOTE(f4)",
-                                "\"\"special\": \"\\b\\f\\r\"\"",
+                                "\"\\\"special\\\": \\\"\\\\b\\\\f\\\\r\\\"\"",
+                                STRING().notNull())
+                        .testResult(
+                                $("f5").jsonQuote(),
+                                "JSON_QUOTE(f5)",
+                                "\"\\tThis quote\\\\ \\\" \\/\"",
                                 STRING().notNull()));
+
     }
 
     private static List<TestSetSpec> jsonUnquoteSpec() {
