@@ -63,19 +63,19 @@ public class JsonUnquoteFunction extends BuiltInScalarFunction {
                         result.append(nextChar);
                         break;
                     case 'b':
-                        result.append("\b");
+                        result.append('\b');
                         break;
                     case 'f':
-                        result.append("\f");
+                        result.append('\f');
                         break;
                     case 'n':
-                        result.append("\n");
+                        result.append('\n');
                         break;
                     case 'r':
-                        result.append("\r");
+                        result.append('\r');
                         break;
                     case 't':
-                        result.append("\t");
+                        result.append('\t');
                         break;
                     case 'u':
                         result.append(fromUnicodeEscapedRepr(inputStr, i));

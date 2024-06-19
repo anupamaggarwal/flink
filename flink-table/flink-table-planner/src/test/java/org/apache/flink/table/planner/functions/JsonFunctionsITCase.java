@@ -848,7 +848,7 @@ class JsonFunctionsITCase extends BuiltInFunctionTestBase {
                         .testResult(
                                 $("f12").jsonUnquote(),
                                 "JSON_UNQUOTE(f12)",
-                                "invalid unicode \\u006z",
+                                "\"invalid unicode \\u006z\"",
                                 STRING().notNull()));
     }
 
