@@ -42,8 +42,9 @@ public class JsonUnquoteFunction extends BuiltInScalarFunction {
         try {
             if (!(jsonInString.length() > 1
                     && jsonInString.startsWith("\"")
-                    && jsonInString.endsWith("\""))) return false;
-
+                    && jsonInString.endsWith("\""))) {
+                return false;
+            }
             final ObjectMapper mapper = new ObjectMapper();
             mapper.readTree(jsonInString);
             return true;
@@ -63,9 +64,14 @@ public class JsonUnquoteFunction extends BuiltInScalarFunction {
 
                 switch (nextChar) {
                     case '"':
+                        result.append(nextChar);
+                        break;
                     case '\\':
+                        result.append(nextChar);
+                        break;
                     case '/':
                         result.append(nextChar);
+                        break;
                     case 'b':
                         result.append("\b");
                         break;
