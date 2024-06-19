@@ -22,6 +22,7 @@ import org.apache.flink.annotation.Internal;
 import org.apache.flink.table.data.binary.BinaryStringData;
 import org.apache.flink.table.functions.BuiltInFunctionDefinitions;
 import org.apache.flink.table.functions.SpecializedFunction.SpecializedContext;
+import org.apache.flink.table.runtime.functions.SqlJsonUtils;
 import org.apache.flink.util.FlinkRuntimeException;
 
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper;
@@ -39,18 +40,7 @@ public class JsonUnquoteFunction extends BuiltInScalarFunction {
     }
 
     private static boolean isValidJsonVal(String jsonInString) {
-        try {
-            if (!(jsonInString.length() > 1
-                    && jsonInString.startsWith("\"")
-                    && jsonInString.endsWith("\""))) {
-                return false;
-            }
-            final ObjectMapper mapper = new ObjectMapper();
-            mapper.readTree(jsonInString);
-            return true;
-        } catch (IOException e) {
-            return false;
-        }
+       return SqlJsonUtils.isJsonValue(jsonInString);
     }
 
     private String unescape(String inputStr) {

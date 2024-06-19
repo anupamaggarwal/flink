@@ -706,8 +706,10 @@ class JsonFunctionsITCase extends BuiltInFunctionTestBase {
                                 "[1, 2, 3]",
                                 "This is a \t test \n with special characters: \" \\ \b \f \r \u0041",
                                 "\"special\": \"\\b\\f\\r\"",
-                                "\tThis quote\\ \" /")
+                                "\tThis quote\\ \" /",
+                                "this will not be quoted \\u006z")
                         .andDataTypes(
+                                STRING().notNull(),
                                 STRING().notNull(),
                                 STRING().notNull(),
                                 STRING().notNull(),
@@ -740,6 +742,11 @@ class JsonFunctionsITCase extends BuiltInFunctionTestBase {
                                 $("f5").jsonQuote(),
                                 "JSON_QUOTE(f5)",
                                 "\"\\tThis quote\\\\ \\\" \\/\"",
+                                STRING().notNull())
+                        .testResult(
+                                $("f6").jsonQuote(),
+                                "JSON_QUOTE(f6)",
+                                "\"this will not be quoted \\\\u006z\"",
                                 STRING().notNull()));
 
     }
@@ -764,9 +771,15 @@ class JsonFunctionsITCase extends BuiltInFunctionTestBase {
                                 "\"[1, 2, 3}",
                                 "\"",
                                 "\"[\"\\t\\u0032\"]\"",
-                                "\"This is a \\t test \\n with special characters: \\b \\f \\r \\u0041\"",
-                                "\"[\"This is a \\t test \\n with special characters: \\b \\f \\r A\"]\"")
+                                "\"[\"This is a \\t test \\n with special characters: \\b \\f \\r \\u0041\"]\"",
+                                "\"\"\"",
+                                "\"\"hg\"",
+                                "\"a unicode \u2260\"",
+                                "\"invalid unicode \\u006z\"")
                         .andDataTypes(
+                                STRING().notNull(),
+                                STRING().notNull(),
+                                STRING().notNull(),
                                 STRING().notNull(),
                                 STRING().notNull(),
                                 STRING().notNull(),
@@ -814,12 +827,28 @@ class JsonFunctionsITCase extends BuiltInFunctionTestBase {
                         .testResult(
                                 $("f8").jsonUnquote(),
                                 "JSON_UNQUOTE(f8)",
-                                "This is a \t test \n with special characters: \b \f \r A",
+                                "[\"This is a \t test \n with special characters: \b \f \r A\"]",
                                 STRING().notNull())
+
                         .testResult(
                                 $("f9").jsonUnquote(),
                                 "JSON_UNQUOTE(f9)",
-                                "[\"This is a \t test \n with special characters: \b \f \r A\"]",
+                                "\"",
+                                STRING().notNull())
+                        .testResult(
+                                $("f10").jsonUnquote(),
+                                "JSON_UNQUOTE(f10)",
+                                "\"hg",
+                                STRING().notNull())
+                        .testResult(
+                                $("f11").jsonUnquote(),
+                                "JSON_UNQUOTE(f11)",
+                                "a unicode ≠",
+                                STRING().notNull())
+                        .testResult(
+                                $("f12").jsonUnquote(),
+                                "JSON_UNQUOTE(f12)",
+                                "invalid unicode \\u006z",
                                 STRING().notNull()));
     }
 
