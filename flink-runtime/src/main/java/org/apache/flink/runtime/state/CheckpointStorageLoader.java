@@ -48,7 +48,8 @@ public class CheckpointStorageLoader {
 
     /**
      * Loads the checkpoint storage from the configuration, from the parameter
-     * 'state.checkpoint-storage', as defined in {@link CheckpointingOptions#CHECKPOINT_STORAGE}.
+     * 'execution.checkpointing.storage', as defined in {@link
+     * CheckpointingOptions#CHECKPOINT_STORAGE}.
      *
      * <p>The implementation can be specified either via their shortcut name, or via the class name
      * of a {@link CheckpointStorageFactory}. If a CheckpointStorageFactory class name is specified,
@@ -79,7 +80,7 @@ public class CheckpointStorageLoader {
             if (logger != null) {
                 logger.debug(
                         "The configuration {} has not be set in the current"
-                                + " sessions flink-conf.yaml. Falling back to a default CheckpointStorage"
+                                + " sessions config.yaml. Falling back to a default CheckpointStorage"
                                 + " type. Users are strongly encouraged explicitly set this configuration"
                                 + " so they understand how their applications are checkpointing"
                                 + " snapshots for fault-tolerance.",
@@ -138,7 +139,7 @@ public class CheckpointStorageLoader {
      * StreamExecutionEnvironment}.
      *
      * <p>3) Use the {@link CheckpointStorage} instance configured via the clusters
-     * <b>flink-conf.yaml</b>.
+     * <b>config.yaml</b>.
      *
      * <p>4) Load a default {@link CheckpointStorage} instance.
      *

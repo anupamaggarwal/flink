@@ -76,6 +76,7 @@ import org.apache.flink.runtime.plugable.SerializationDelegate;
 import org.apache.flink.runtime.shuffle.ShuffleEnvironment;
 import org.apache.flink.runtime.state.AbstractKeyedStateBackend;
 import org.apache.flink.runtime.state.AbstractStateBackend;
+import org.apache.flink.runtime.state.AsyncKeyedStateBackend;
 import org.apache.flink.runtime.state.CheckpointStreamFactory;
 import org.apache.flink.runtime.state.CheckpointableKeyedStateBackend;
 import org.apache.flink.runtime.state.DoneFuture;
@@ -142,7 +143,6 @@ import org.apache.flink.util.CloseableIterable;
 import org.apache.flink.util.ExceptionUtils;
 import org.apache.flink.util.FatalExitExceptionHandler;
 import org.apache.flink.util.FlinkRuntimeException;
-import org.apache.flink.util.TestLoggerExtension;
 import org.apache.flink.util.clock.SystemClock;
 import org.apache.flink.util.concurrent.FutureUtils;
 import org.apache.flink.util.concurrent.TestingUncaughtExceptionHandler;
@@ -151,7 +151,6 @@ import org.apache.flink.util.function.RunnableWithException;
 import org.apache.flink.util.function.SupplierWithException;
 
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.mockito.ArgumentCaptor;
 import org.mockito.invocation.InvocationOnMock;
@@ -216,7 +215,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /** Tests for {@link StreamTask}. */
-@ExtendWith(TestLoggerExtension.class)
 public class StreamTaskTest {
 
     @RegisterExtension
@@ -514,7 +512,7 @@ public class StreamTaskTest {
     @Test
     void testStateBackendLoadingAndClosing() throws Exception {
         Configuration taskManagerConfig = new Configuration();
-        taskManagerConfig.setString(STATE_BACKEND, TestMemoryStateBackendFactory.class.getName());
+        taskManagerConfig.set(STATE_BACKEND, TestMemoryStateBackendFactory.class.getName());
 
         StreamConfig cfg = new StreamConfig(new Configuration());
         cfg.setStateKeySerializer(mock(TypeSerializer.class));
@@ -555,7 +553,7 @@ public class StreamTaskTest {
     @Test
     void testStateBackendClosingOnFailure() throws Exception {
         Configuration taskManagerConfig = new Configuration();
-        taskManagerConfig.setString(STATE_BACKEND, TestMemoryStateBackendFactory.class.getName());
+        taskManagerConfig.set(STATE_BACKEND, TestMemoryStateBackendFactory.class.getName());
 
         StreamConfig cfg = new StreamConfig(new Configuration());
         cfg.setStateKeySerializer(mock(TypeSerializer.class));
@@ -699,8 +697,7 @@ public class StreamTaskTest {
                     .hasMessage(
                             "Configured state backend (OnlyIncrementalStateBackend) does not"
                                     + " support enforcing a full snapshot. If you are restoring in"
-                                    + " NO_CLAIM mode, please consider choosing either CLAIM or"
-                                    + " LEGACY restore mode.");
+                                    + " NO_CLAIM mode, please consider choosing CLAIM mode.");
         }
     }
 
@@ -1527,7 +1524,7 @@ public class StreamTaskTest {
     void testTaskAvoidHangingAfterSnapshotStateThrownException() throws Exception {
         // given: Configured SourceStreamTask with source which fails on checkpoint.
         Configuration taskManagerConfig = new Configuration();
-        taskManagerConfig.setString(STATE_BACKEND, TestMemoryStateBackendFactory.class.getName());
+        taskManagerConfig.set(STATE_BACKEND, TestMemoryStateBackendFactory.class.getName());
 
         StreamConfig cfg = new StreamConfig(new Configuration());
         cfg.setStateKeySerializer(mock(TypeSerializer.class));
@@ -2355,6 +2352,11 @@ public class StreamTaskTest {
                     @Override
                     public CheckpointableKeyedStateBackend<?> keyedStateBackend() {
                         return controller.keyedStateBackend();
+                    }
+
+                    @Override
+                    public AsyncKeyedStateBackend asyncKeyedStateBackend() {
+                        return controller.asyncKeyedStateBackend();
                     }
 
                     @Override

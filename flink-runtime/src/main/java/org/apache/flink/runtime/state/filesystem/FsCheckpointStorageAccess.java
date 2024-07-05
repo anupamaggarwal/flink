@@ -51,9 +51,9 @@ public class FsCheckpointStorageAccess extends AbstractFsCheckpointStorageAccess
 
     protected final Path taskOwnedStateDirectory;
 
-    private final int fileSizeThreshold;
+    protected final int fileSizeThreshold;
 
-    private final int writeBufferSize;
+    protected final int writeBufferSize;
 
     private boolean baseLocationsInitialized = false;
 
@@ -232,7 +232,6 @@ public class FsCheckpointStorageAccess extends AbstractFsCheckpointStorageAccess
             FileMergingSnapshotManager mergingSnapshotManager, Environment environment)
             throws IOException {
         return new FsMergingCheckpointStorageAccess(
-                fileSystem,
                 checkpointsDirectory,
                 getDefaultSavepointDirectory(),
                 environment.getJobID(),

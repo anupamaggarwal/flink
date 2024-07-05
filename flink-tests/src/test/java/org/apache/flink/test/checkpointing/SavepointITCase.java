@@ -38,10 +38,12 @@ import org.apache.flink.client.program.rest.RestClusterClient;
 import org.apache.flink.configuration.CheckpointingOptions;
 import org.apache.flink.configuration.ClusterOptions;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.ExternalizedCheckpointRetention;
 import org.apache.flink.configuration.MemorySize;
 import org.apache.flink.configuration.StateBackendOptions;
 import org.apache.flink.configuration.TaskManagerOptions;
 import org.apache.flink.contrib.streaming.state.EmbeddedRocksDBStateBackend;
+import org.apache.flink.core.execution.RestoreMode;
 import org.apache.flink.core.execution.SavepointFormatType;
 import org.apache.flink.core.fs.FSDataInputStream;
 import org.apache.flink.core.fs.FSDataOutputStream;
@@ -56,7 +58,6 @@ import org.apache.flink.runtime.execution.ExecutionState;
 import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.jobgraph.JobGraphTestUtils;
 import org.apache.flink.runtime.jobgraph.JobVertex;
-import org.apache.flink.runtime.jobgraph.RestoreMode;
 import org.apache.flink.runtime.jobgraph.SavepointRestoreSettings;
 import org.apache.flink.runtime.messages.FlinkJobNotFoundException;
 import org.apache.flink.runtime.operators.testutils.ExpectedTestException;
@@ -74,7 +75,6 @@ import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction;
 import org.apache.flink.streaming.api.checkpoint.ListCheckpointed;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.IterativeStream;
-import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.streaming.api.functions.sink.SinkFunction;
@@ -468,8 +468,8 @@ public class SavepointITCase extends TestLogger {
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setStateBackend(new EmbeddedRocksDBStateBackend(true));
         env.getCheckpointConfig()
-                .enableExternalizedCheckpoints(
-                        CheckpointConfig.ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION);
+                .setExternalizedCheckpointRetention(
+                        ExternalizedCheckpointRetention.RETAIN_ON_CANCELLATION);
         env.getCheckpointConfig().setCheckpointStorage(folder.newFolder().toURI());
         env.setParallelism(parallelism);
 
@@ -730,7 +730,7 @@ public class SavepointITCase extends TestLogger {
         final int numSlotsPerTaskManager = 1;
 
         final Configuration config = new Configuration();
-        config.setString(CheckpointingOptions.SAVEPOINT_DIRECTORY, savepointDir.toURI().toString());
+        config.set(CheckpointingOptions.SAVEPOINT_DIRECTORY, savepointDir.toURI().toString());
 
         final MiniClusterWithClientResource cluster =
                 new MiniClusterWithClientResource(
@@ -957,7 +957,7 @@ public class SavepointITCase extends TestLogger {
         int parallelism = numTaskManagers * numSlotsPerTaskManager;
 
         final Configuration config = new Configuration();
-        config.setString(CheckpointingOptions.SAVEPOINT_DIRECTORY, savepointDir.toURI().toString());
+        config.set(CheckpointingOptions.SAVEPOINT_DIRECTORY, savepointDir.toURI().toString());
 
         MiniClusterWithClientResource cluster =
                 new MiniClusterWithClientResource(
@@ -1238,7 +1238,7 @@ public class SavepointITCase extends TestLogger {
 
         // Flink configuration
         final Configuration config = new Configuration();
-        config.setString(CheckpointingOptions.SAVEPOINT_DIRECTORY, savepointDir.toURI().toString());
+        config.set(CheckpointingOptions.SAVEPOINT_DIRECTORY, savepointDir.toURI().toString());
 
         String savepointPath;
 
@@ -1766,11 +1766,10 @@ public class SavepointITCase extends TestLogger {
 
     private Configuration getFileBasedCheckpointsConfig(final String savepointDir) {
         final Configuration config = new Configuration();
-        config.setString(StateBackendOptions.STATE_BACKEND, "filesystem");
-        config.setString(
-                CheckpointingOptions.CHECKPOINTS_DIRECTORY, checkpointDir.toURI().toString());
+        config.set(StateBackendOptions.STATE_BACKEND, "filesystem");
+        config.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, checkpointDir.toURI().toString());
         config.set(CheckpointingOptions.FS_SMALL_FILE_THRESHOLD, MemorySize.ZERO);
-        config.setString(CheckpointingOptions.SAVEPOINT_DIRECTORY, savepointDir);
+        config.set(CheckpointingOptions.SAVEPOINT_DIRECTORY, savepointDir);
         return config;
     }
 

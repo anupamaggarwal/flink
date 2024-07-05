@@ -23,6 +23,7 @@ import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.eventtime.IndexedCombinedWatermarkStatus;
+import org.apache.flink.api.common.operators.MailboxExecutor;
 import org.apache.flink.api.common.state.KeyedStateStore;
 import org.apache.flink.api.common.state.State;
 import org.apache.flink.api.common.state.StateDescriptor;
@@ -62,6 +63,8 @@ import org.apache.flink.util.Preconditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nullable;
+
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.Optional;
@@ -90,10 +93,12 @@ public abstract class AbstractStreamOperatorV2<OUT>
     protected final StreamConfig config;
     protected final Output<StreamRecord<OUT>> output;
     private final StreamingRuntimeContext runtimeContext;
+    private final MailboxExecutor mailboxExecutor;
+
     private final ExecutionConfig executionConfig;
     private final ClassLoader userCodeClassLoader;
     private final CloseableRegistry cancelables;
-    private final IndexedCombinedWatermarkStatus combinedWatermark;
+    protected final IndexedCombinedWatermarkStatus combinedWatermark;
 
     /** Metric group for the operator. */
     protected final InternalOperatorMetricGroup metrics;
@@ -102,8 +107,9 @@ public abstract class AbstractStreamOperatorV2<OUT>
     protected final ProcessingTimeService processingTimeService;
     protected final RecordAttributes[] lastRecordAttributes;
 
-    private StreamOperatorStateHandler stateHandler;
-    private InternalTimeServiceManager<?> timeServiceManager;
+    protected StreamOperatorStateHandler stateHandler;
+    protected InternalTimeServiceManager<?> timeServiceManager;
+    private @Nullable MailboxWatermarkProcessor watermarkProcessor;
 
     public AbstractStreamOperatorV2(StreamOperatorParameters<OUT> parameters, int numberOfInputs) {
         final Environment environment = parameters.getContainingTask().getEnvironment();
@@ -136,12 +142,14 @@ public abstract class AbstractStreamOperatorV2<OUT>
                         processingTimeService,
                         null,
                         environment.getExternalResourceInfoProvider());
+
+        mailboxExecutor = parameters.getMailboxExecutor();
     }
 
     private LatencyStats createLatencyStats(
             Configuration taskManagerConfig, int indexInSubtaskGroup) {
         try {
-            int historySize = taskManagerConfig.getInteger(MetricOptions.LATENCY_HISTORY_SIZE);
+            int historySize = taskManagerConfig.get(MetricOptions.LATENCY_HISTORY_SIZE);
             if (historySize <= 0) {
                 LOG.warn(
                         "{} has been set to a value equal or below 0: {}. Using default.",
@@ -151,7 +159,7 @@ public abstract class AbstractStreamOperatorV2<OUT>
             }
 
             final String configuredGranularity =
-                    taskManagerConfig.getString(MetricOptions.LATENCY_SOURCE_GRANULARITY);
+                    taskManagerConfig.get(MetricOptions.LATENCY_SOURCE_GRANULARITY);
             LatencyStats.Granularity granularity;
             try {
                 granularity =
@@ -190,7 +198,7 @@ public abstract class AbstractStreamOperatorV2<OUT>
     }
 
     @Override
-    public final void initializeState(StreamTaskStateInitializer streamTaskStateManager)
+    public void initializeState(StreamTaskStateInitializer streamTaskStateManager)
             throws Exception {
         final TypeSerializer<?> keySerializer =
                 config.getStateKeySerializer(getUserCodeClassloader());
@@ -214,6 +222,33 @@ public abstract class AbstractStreamOperatorV2<OUT>
         stateHandler = new StreamOperatorStateHandler(context, getExecutionConfig(), cancelables);
         timeServiceManager = context.internalTimerServiceManager();
         stateHandler.initializeOperatorState(this);
+
+        if (useSplittableTimers()
+                && areSplittableTimersConfigured()
+                && getTimeServiceManager().isPresent()) {
+            watermarkProcessor =
+                    new MailboxWatermarkProcessor(
+                            output, mailboxExecutor, getTimeServiceManager().get());
+        }
+    }
+
+    /**
+     * Can be overridden to disable splittable timers for this particular operator even if config
+     * option is enabled. By default, splittable timers are disabled.
+     *
+     * @return {@code true} if splittable timers should be used (subject to {@link
+     *     StreamConfig#isUnalignedCheckpointsEnabled()} and {@link
+     *     StreamConfig#isUnalignedCheckpointsSplittableTimersEnabled()}. {@code false} if
+     *     splittable timers should never be used.
+     */
+    @Internal
+    public boolean useSplittableTimers() {
+        return false;
+    }
+
+    @Internal
+    private boolean areSplittableTimersConfigured() {
+        return AbstractStreamOperator.areSplittableTimersConfigured(config);
     }
 
     /**
@@ -268,7 +303,7 @@ public abstract class AbstractStreamOperatorV2<OUT>
     }
 
     @Override
-    public final OperatorSnapshotFutures snapshotState(
+    public OperatorSnapshotFutures snapshotState(
             long checkpointId,
             long timestamp,
             CheckpointOptions checkpointOptions,
@@ -465,7 +500,6 @@ public abstract class AbstractStreamOperatorV2<OUT>
      * @param triggerable The {@link Triggerable} that should be invoked when timers fire
      * @param <N> The type of the timer namespace.
      */
-    @VisibleForTesting
     public <K, N> InternalTimerService<N> getInternalTimerService(
             String name, TypeSerializer<N> namespaceSerializer, Triggerable<K, N> triggerable) {
         if (timeServiceManager == null) {
@@ -482,6 +516,14 @@ public abstract class AbstractStreamOperatorV2<OUT>
     }
 
     public void processWatermark(Watermark mark) throws Exception {
+        if (watermarkProcessor != null) {
+            watermarkProcessor.emitWatermarkInsideMailbox(mark);
+        } else {
+            emitWatermarkDirectly(mark);
+        }
+    }
+
+    private void emitWatermarkDirectly(Watermark mark) throws Exception {
         if (timeServiceManager != null) {
             timeServiceManager.advanceWatermark(mark);
         }
@@ -494,7 +536,7 @@ public abstract class AbstractStreamOperatorV2<OUT>
         }
     }
 
-    public final void processWatermarkStatus(WatermarkStatus watermarkStatus, int inputId)
+    public void processWatermarkStatus(WatermarkStatus watermarkStatus, int inputId)
             throws Exception {
         boolean wasIdle = combinedWatermark.isIdle();
         if (combinedWatermark.updateStatus(inputId - 1, watermarkStatus.isIdle())) {

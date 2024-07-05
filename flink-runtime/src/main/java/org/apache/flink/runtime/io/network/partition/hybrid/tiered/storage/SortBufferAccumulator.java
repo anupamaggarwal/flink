@@ -27,13 +27,21 @@ import org.apache.flink.runtime.io.network.buffer.NetworkBuffer;
 import org.apache.flink.runtime.io.network.partition.BufferWithSubpartition;
 import org.apache.flink.runtime.io.network.partition.DataBuffer;
 import org.apache.flink.runtime.io.network.partition.hybrid.tiered.common.TieredStorageSubpartitionId;
+import org.apache.flink.util.ExceptionUtils;
+import org.apache.flink.util.concurrent.ExecutorThreadFactory;
 import org.apache.flink.util.function.TriConsumer;
 
 import javax.annotation.Nullable;
+import javax.annotation.concurrent.GuardedBy;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.LinkedList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
 import static org.apache.flink.util.Preconditions.checkState;
@@ -46,9 +54,9 @@ import static org.apache.flink.util.Preconditions.checkState;
  *
  * <p>The {@link SortBufferAccumulator} can help use less buffers to accumulate data, which
  * decouples the buffer usage with the number of parallelism. The number of buffers used by the
- * {@link SortBufferAccumulator} will be numBuffers at most. Once the {@link DataBuffer} is full, or
- * switching from broadcast to non-broadcast(or vice versa), the buffer in the sort buffer will be
- * flushed to the tiers.
+ * {@link SortBufferAccumulator} will be numExpectedBuffers at most. Once the {@link DataBuffer} is
+ * full, or switching from broadcast to non-broadcast(or vice versa), the buffer in the sort buffer
+ * will be flushed to the tiers.
  *
  * <p>Note that this class need not be thread-safe, because it should only be accessed from the main
  * thread.
@@ -58,13 +66,14 @@ public class SortBufferAccumulator implements BufferAccumulator {
     /** The number of the subpartitions. */
     private final int numSubpartitions;
 
-    /** The total number of the buffers used by the {@link SortBufferAccumulator}. */
-    private final int numBuffers;
+    /** The number of the expected buffers used by the {@link SortBufferAccumulator}. */
+    private final int numExpectedBuffers;
 
     /** The byte size of one single buffer. */
     private final int bufferSizeBytes;
 
     /** The empty buffers without storing data. */
+    @GuardedBy("lock")
     private final LinkedList<MemorySegment> freeSegments = new LinkedList<>();
 
     /** The memory manager of the tiered storage. */
@@ -78,7 +87,9 @@ public class SortBufferAccumulator implements BufferAccumulator {
      * data integrity. Note that this can be null before using it to store records, and this {@link
      * DataBuffer} will be released once flushed.
      */
-    @Nullable private TieredStorageSortBuffer currentDataBuffer;
+    @GuardedBy("lock")
+    @Nullable
+    private TieredStorageSortBuffer currentDataBuffer;
 
     /**
      * The buffer recycler. Note that this can be null before requesting buffers from the memory
@@ -94,25 +105,61 @@ public class SortBufferAccumulator implements BufferAccumulator {
     @Nullable
     private TriConsumer<TieredStorageSubpartitionId, Buffer, Integer> accumulatedBufferFlusher;
 
+    /**
+     * An executor to periodically check the size of buffer pool. If the size is changed, the
+     * accumulated buffers should be flushed to release the buffers.
+     */
+    private final ScheduledExecutorService periodicalAccumulatorFlusher =
+            Executors.newSingleThreadScheduledExecutor(
+                    new ExecutorThreadFactory("hybrid-shuffle-periodical-accumulator-flusher"));
+
+    private final long poolSizeCheckInterval;
+
+    private AtomicInteger poolSize;
+
     /** Whether the current {@link DataBuffer} is a broadcast sort buffer. */
     private boolean isBroadcastDataBuffer;
 
+    @GuardedBy("lock")
+    private boolean isDataBufferReleased;
+
+    private final Object lock = new Object();
+
     public SortBufferAccumulator(
             int numSubpartitions,
-            int numBuffers,
+            int numExpectedBuffers,
             int bufferSizeBytes,
+            long poolSizeCheckInterval,
             TieredStorageMemoryManager memoryManager,
             boolean isPartialRecordAllowed) {
         this.numSubpartitions = numSubpartitions;
         this.bufferSizeBytes = bufferSizeBytes;
-        this.numBuffers = numBuffers;
+        this.numExpectedBuffers = numExpectedBuffers;
+        this.poolSizeCheckInterval = poolSizeCheckInterval;
         this.memoryManager = memoryManager;
         this.isPartialRecordAllowed = isPartialRecordAllowed;
+        this.poolSize = new AtomicInteger(-1);
     }
 
     @Override
     public void setup(TriConsumer<TieredStorageSubpartitionId, Buffer, Integer> bufferFlusher) {
         this.accumulatedBufferFlusher = bufferFlusher;
+
+        if (poolSizeCheckInterval > 0) {
+            periodicalAccumulatorFlusher.scheduleWithFixedDelay(
+                    () -> {
+                        int newSize = this.memoryManager.getBufferPoolSize();
+                        int oldSize = poolSize.getAndSet(newSize);
+                        if (oldSize > newSize) {
+                            if (!returnFreeSegments(oldSize - newSize)) {
+                                flushCurrentDataBuffer();
+                            }
+                        }
+                    },
+                    poolSizeCheckInterval,
+                    poolSizeCheckInterval,
+                    TimeUnit.MILLISECONDS);
+        }
     }
 
     @Override
@@ -123,38 +170,55 @@ public class SortBufferAccumulator implements BufferAccumulator {
             boolean isBroadcast)
             throws IOException {
         int targetSubpartition = subpartitionId.getSubpartitionId();
-        switchCurrentDataBufferIfNeeded(isBroadcast);
-        if (!checkNotNull(currentDataBuffer).append(record, targetSubpartition, dataType)) {
-            return;
+        synchronized (lock) {
+            switchCurrentDataBufferIfNeeded(isBroadcast);
+            if (!checkNotNull(currentDataBuffer).append(record, targetSubpartition, dataType)) {
+                return;
+            }
+
+            // The sort buffer is empty, but we failed to write the record into it, which indicates
+            // the record is larger than the sort buffer can hold. So the record is written into
+            // multiple buffers directly.
+            if (!currentDataBuffer.hasRemaining()) {
+                isDataBufferReleased = true;
+                currentDataBuffer.release();
+                writeLargeRecord(record, targetSubpartition, dataType);
+                return;
+            }
+            flushDataBuffer();
         }
 
-        // The sort buffer is empty, but we failed to write the record into it, which indicates the
-        // record is larger than the sort buffer can hold. So the record is written into multiple
-        // buffers directly.
-        if (!currentDataBuffer.hasRemaining()) {
-            currentDataBuffer.release();
-            writeLargeRecord(record, targetSubpartition, dataType);
-            return;
-        }
-
-        flushDataBuffer();
         checkState(record.hasRemaining(), "Empty record.");
         receive(record, subpartitionId, dataType, isBroadcast);
     }
 
     @Override
     public void close() {
-        flushCurrentDataBuffer();
-        releaseFreeBuffers();
-        if (currentDataBuffer != null) {
-            currentDataBuffer.release();
+        if (periodicalAccumulatorFlusher != null) {
+            periodicalAccumulatorFlusher.shutdown();
+            try {
+                if (!periodicalAccumulatorFlusher.awaitTermination(5L, TimeUnit.MINUTES)) {
+                    throw new TimeoutException(
+                            "Timeout for shutting down the periodical accumulator flusher.");
+                }
+            } catch (Exception e) {
+                ExceptionUtils.rethrow(e);
+            }
+        }
+        synchronized (lock) {
+            flushCurrentDataBuffer();
+            isDataBufferReleased = true;
+            releaseFreeBuffers();
+            if (currentDataBuffer != null) {
+                currentDataBuffer.release();
+            }
         }
     }
 
     // ------------------------------------------------------------------------
     //  Internal Methods
     // ------------------------------------------------------------------------
-
+    @GuardedBy("lock")
     private void switchCurrentDataBufferIfNeeded(boolean isBroadcast) {
         if (isBroadcast == isBroadcastDataBuffer
                 && currentDataBuffer != null
@@ -164,9 +228,12 @@ public class SortBufferAccumulator implements BufferAccumulator {
         }
         isBroadcastDataBuffer = isBroadcast;
         flushCurrentDataBuffer();
+        isDataBufferReleased = true;
         currentDataBuffer = createNewDataBuffer();
+        isDataBufferReleased = false;
     }
 
+    @GuardedBy("lock")
     private TieredStorageSortBuffer createNewDataBuffer() {
         requestBuffers();
 
@@ -181,8 +248,10 @@ public class SortBufferAccumulator implements BufferAccumulator {
                 isPartialRecordAllowed);
     }
 
+    @GuardedBy("lock")
     private void requestBuffers() {
-        while (freeSegments.size() < numBuffers) {
+        while (freeSegments.size()
+                < Math.min(numExpectedBuffers, memoryManager.getBufferPoolSize() - 1)) {
             Buffer buffer = requestBuffer();
             freeSegments.add(checkNotNull(buffer).getMemorySegment());
             if (bufferRecycler == null) {
@@ -191,6 +260,7 @@ public class SortBufferAccumulator implements BufferAccumulator {
         }
     }
 
+    @GuardedBy("lock")
     private void flushDataBuffer() {
         if (currentDataBuffer == null
                 || currentDataBuffer.isReleased()
@@ -199,7 +269,7 @@ public class SortBufferAccumulator implements BufferAccumulator {
         }
         currentDataBuffer.finish();
 
-        do {
+        while (currentDataBuffer.hasRemaining()) {
             MemorySegment freeSegment = getFreeSegment();
             BufferWithSubpartition bufferWithSubpartition =
                     currentDataBuffer.getNextBuffer(freeSegment);
@@ -212,16 +282,31 @@ public class SortBufferAccumulator implements BufferAccumulator {
                                     ((double) currentDataBuffer.getRecordRemainingBytes())
                                             / bufferSizeBytes);
             flushBuffer(bufferWithSubpartition, numRemainingConsecutiveBuffers);
-        } while (true);
+        }
 
+        isDataBufferReleased = true;
         releaseFreeBuffers();
         currentDataBuffer.release();
     }
 
     private void flushCurrentDataBuffer() {
-        if (currentDataBuffer != null) {
-            flushDataBuffer();
-            currentDataBuffer = null;
+        synchronized (lock) {
+            if (currentDataBuffer != null) {
+                flushDataBuffer();
+                currentDataBuffer = null;
+            }
+        }
+    }
+
+    private boolean returnFreeSegments(int numSegments) {
+        synchronized (lock) {
+            if (currentDataBuffer == null
+                    || currentDataBuffer.isReleased()
+                    || !currentDataBuffer.hasRemaining()) {
+                return false;
+            } else {
+                return currentDataBuffer.returnFreeSegments(numSegments);
+            }
         }
     }
 
@@ -251,11 +336,13 @@ public class SortBufferAccumulator implements BufferAccumulator {
     }
 
     private MemorySegment getFreeSegment() {
-        MemorySegment freeSegment = freeSegments.poll();
-        if (freeSegment == null) {
-            freeSegment = requestBuffer().getMemorySegment();
+        synchronized (lock) {
+            MemorySegment freeSegment = freeSegments.poll();
+            if (freeSegment == null) {
+                freeSegment = requestBuffer().getMemorySegment();
+            }
+            return freeSegment;
         }
-        return freeSegment;
     }
 
     private void flushBuffer(
@@ -278,11 +365,22 @@ public class SortBufferAccumulator implements BufferAccumulator {
     }
 
     private void releaseFreeBuffers() {
-        freeSegments.forEach(this::recycleBuffer);
-        freeSegments.clear();
+        synchronized (lock) {
+            isDataBufferReleased = true;
+            freeSegments.forEach(this::recycleBuffer);
+            freeSegments.clear();
+        }
     }
 
     private void recycleBuffer(MemorySegment memorySegment) {
-        checkNotNull(bufferRecycler).recycle(memorySegment);
+        synchronized (lock) {
+            if (!isDataBufferReleased
+                    && currentDataBuffer != null
+                    && !currentDataBuffer.isReleased()) {
+                freeSegments.add(memorySegment);
+            } else {
+                checkNotNull(bufferRecycler).recycle(memorySegment);
+            }
+        }
     }
 }

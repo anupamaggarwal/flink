@@ -28,9 +28,9 @@ jobs:
       matrix:
         branch:
           - master
+          - release-1.19
           - release-1.18
           - release-1.17
-          - release-1.16
     steps:
       - uses: actions/checkout@v3
         with:
@@ -42,8 +42,8 @@ jobs:
           echo "flink_branch=${currentBranch}" >> ${GITHUB_ENV}
 
           if [ "${currentBranch}" = "master" ]; then
-            echo "flink_alias=release-1.19" >> ${GITHUB_ENV}
-          elif [ "${currentBranch}" = "release-1.18" ]; then
+            echo "flink_alias=release-1.20" >> ${GITHUB_ENV}
+          elif [ "${currentBranch}" = "release-1.19" ]; then
             echo "flink_alias=stable" >> ${GITHUB_ENV}
           fi
       - name: Build documentation
@@ -52,7 +52,7 @@ jobs:
       - name: Upload documentation
         uses: burnett01/rsync-deployments@5.2
         with:
-          switches: --archive --compress
+          switches: --archive --compress --delete
           path: docs/target/
           remote_path: ${{ secrets.NIGHTLIES_RSYNC_PATH }}/flink/flink-docs-${{ env.flink_branch }}/
           remote_host: ${{ secrets.NIGHTLIES_RSYNC_HOST }}
@@ -63,7 +63,7 @@ jobs:
         if: env.flink_alias != ''
         uses: burnett01/rsync-deployments@5.2
         with:
-          switches: --archive --compress
+          switches: --archive --compress --delete
           path: docs/target/
           remote_path: ${{ secrets.NIGHTLIES_RSYNC_PATH }}/flink/flink-docs-${{ env.flink_alias }}/
           remote_host: ${{ secrets.NIGHTLIES_RSYNC_HOST }}

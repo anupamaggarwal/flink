@@ -20,8 +20,10 @@ package org.apache.flink.table.planner.operations;
 
 import org.apache.flink.table.api.SqlParserException;
 import org.apache.flink.table.api.ValidationException;
+import org.apache.flink.table.operations.DescribeCatalogOperation;
 import org.apache.flink.table.operations.LoadModuleOperation;
 import org.apache.flink.table.operations.Operation;
+import org.apache.flink.table.operations.ShowCreateCatalogOperation;
 import org.apache.flink.table.operations.ShowDatabasesOperation;
 import org.apache.flink.table.operations.ShowFunctionsOperation;
 import org.apache.flink.table.operations.ShowModulesOperation;
@@ -42,8 +44,10 @@ import org.apache.flink.table.operations.command.SetOperation;
 import org.apache.flink.table.operations.command.ShowJarsOperation;
 import org.apache.flink.table.planner.parse.ExtendedParser;
 
+import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.Arrays;
@@ -68,6 +72,30 @@ public class SqlOtherOperationConverterTest extends SqlNodeToOperationConversion
         assertThat(operation).isInstanceOf(UseCatalogOperation.class);
         assertThat(((UseCatalogOperation) operation).getCatalogName()).isEqualTo("cat1");
         assertThat(operation.asSummaryString()).isEqualTo("USE CATALOG cat1");
+    }
+
+    @ParameterizedTest
+    @CsvSource({"true,true", "true,false", "false,true", "false,false"})
+    void testDescribeCatalog(boolean abbr, boolean extended) {
+        final String catalogName = "cat1";
+        final String sql =
+                String.format(
+                        "%s CATALOG %s %s",
+                        abbr ? "DESC" : "DESCRIBE", extended ? "EXTENDED" : "", catalogName);
+        Operation operation = parse(sql);
+        assertThat(operation)
+                .isInstanceOf(DescribeCatalogOperation.class)
+                .asInstanceOf(InstanceOfAssertFactories.type(DescribeCatalogOperation.class))
+                .extracting(
+                        DescribeCatalogOperation::getCatalogName,
+                        DescribeCatalogOperation::isExtended,
+                        DescribeCatalogOperation::asSummaryString)
+                .containsExactly(
+                        catalogName,
+                        extended,
+                        String.format(
+                                "DESCRIBE CATALOG: (identifier: [%s], isExtended: [%b])",
+                                catalogName, extended));
     }
 
     @Test
@@ -185,6 +213,13 @@ public class SqlOtherOperationConverterTest extends SqlNodeToOperationConversion
         assertThat(showTablesOperation.getCatalogName()).isNull();
         assertThat(showTablesOperation.getDatabaseName()).isNull();
         assertThat(showTablesOperation.getPreposition()).isNull();
+    }
+
+    @Test
+    void testShowCreateCatalog() {
+        Operation operation = parse("show create catalog cat1");
+        assertThat(operation).isInstanceOf(ShowCreateCatalogOperation.class);
+        assertThat(operation.asSummaryString()).isEqualTo("SHOW CREATE CATALOG cat1");
     }
 
     @Test

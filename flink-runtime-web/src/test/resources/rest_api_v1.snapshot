@@ -467,7 +467,7 @@
         "savepointPath" : {
           "type" : "string"
         },
-        "restoreMode" : {
+        "claimMode" : {
           "type" : "string",
           "enum" : [ "CLAIM", "NO_CLAIM", "LEGACY" ]
         },
@@ -476,6 +476,10 @@
           "additionalProperties" : {
             "type" : "string"
           }
+        },
+        "restoreMode" : {
+          "type" : "string",
+          "enum" : [ "CLAIM", "NO_CLAIM", "LEGACY" ]
         }
       }
     },
@@ -865,6 +869,10 @@
           "type" : "string",
           "enum" : [ "INITIALIZING", "CREATED", "RUNNING", "FAILING", "FAILED", "CANCELLING", "CANCELED", "FINISHED", "RESTARTING", "SUSPENDED", "RECONCILING" ]
         },
+        "job-type" : {
+          "type" : "string",
+          "enum" : [ "BATCH", "STREAMING" ]
+        },
         "start-time" : {
           "type" : "integer"
         },
@@ -893,6 +901,9 @@
             "id" : "urn:jsonschema:org:apache:flink:runtime:rest:messages:job:JobDetailsInfo:JobVertexDetailsInfo",
             "properties" : {
               "id" : {
+                "type" : "any"
+              },
+              "slotSharingGroupId" : {
                 "type" : "any"
               },
               "name" : {
@@ -2883,6 +2894,31 @@
           }
         }
       }
+    }
+  }, {
+    "url" : "/jobs/:jobid/vertices/:vertexid/jm-operator-metrics",
+    "method" : "GET",
+    "status-code" : "200 OK",
+    "file-upload" : false,
+    "path-parameters" : {
+      "pathParameters" : [ {
+        "key" : "jobid"
+      }, {
+        "key" : "vertexid"
+      } ]
+    },
+    "query-parameters" : {
+      "queryParameters" : [ {
+        "key" : "get",
+        "mandatory" : false
+      } ]
+    },
+    "request" : {
+      "type" : "object",
+      "id" : "urn:jsonschema:org:apache:flink:runtime:rest:messages:EmptyRequestBody"
+    },
+    "response" : {
+      "type" : "any"
     }
   }, {
     "url" : "/jobs/:jobid/vertices/:vertexid/metrics",

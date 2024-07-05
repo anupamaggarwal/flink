@@ -22,12 +22,13 @@ import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.ConfigOptions;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.ConfigurationUtils;
 import org.apache.flink.configuration.CoreOptions;
 import org.apache.flink.runtime.entrypoint.parser.CommandLineOptions;
 import org.apache.flink.util.OperatingSystem;
 
-import org.apache.flink.shaded.guava32.com.google.common.escape.Escaper;
-import org.apache.flink.shaded.guava32.com.google.common.escape.Escapers;
+import org.apache.flink.shaded.guava31.com.google.common.escape.Escaper;
+import org.apache.flink.shaded.guava31.com.google.common.escape.Escapers;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.Option;
@@ -40,7 +41,6 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.util.Map;
 import java.util.stream.Stream;
 
 import static org.apache.flink.configuration.ConfigOptions.key;
@@ -72,10 +72,8 @@ public class BootstrapTools {
     public static void writeConfiguration(Configuration cfg, File file) throws IOException {
         try (FileWriter fwrt = new FileWriter(file);
                 PrintWriter out = new PrintWriter(fwrt)) {
-            for (Map.Entry<String, String> entry : cfg.toFileWritableMap().entrySet()) {
-                out.print(entry.getKey());
-                out.print(": ");
-                out.println(entry.getValue());
+            for (String s : ConfigurationUtils.convertConfigToWritableLines(cfg, false)) {
+                out.println(s);
             }
         }
     }
@@ -177,8 +175,8 @@ public class BootstrapTools {
                     configuration.getValue(CoreOptions.TMP_DIRS));
         } else if (defaultDirs != null) {
             LOG.info("Setting directories for temporary files to: {}", defaultDirs);
-            configuration.setString(CoreOptions.TMP_DIRS, defaultDirs);
-            configuration.setBoolean(USE_LOCAL_DEFAULT_TMP_DIRS, true);
+            configuration.set(CoreOptions.TMP_DIRS, defaultDirs);
+            configuration.set(USE_LOCAL_DEFAULT_TMP_DIRS, true);
         }
     }
 
@@ -191,7 +189,7 @@ public class BootstrapTools {
     public static Configuration cloneConfiguration(Configuration configuration) {
         final Configuration clonedConfiguration = new Configuration(configuration);
 
-        if (clonedConfiguration.getBoolean(USE_LOCAL_DEFAULT_TMP_DIRS)) {
+        if (clonedConfiguration.get(USE_LOCAL_DEFAULT_TMP_DIRS)) {
             clonedConfiguration.removeConfig(CoreOptions.TMP_DIRS);
             clonedConfiguration.removeConfig(USE_LOCAL_DEFAULT_TMP_DIRS);
         }
@@ -217,12 +215,12 @@ public class BootstrapTools {
                         .flatMap(
                                 (String key) -> {
                                     final String baseValue =
-                                            baseConfig.getString(
+                                            baseConfig.get(
                                                     ConfigOptions.key(key)
                                                             .stringType()
                                                             .noDefaultValue());
                                     final String targetValue =
-                                            targetConfig.getString(
+                                            targetConfig.get(
                                                     ConfigOptions.key(key)
                                                             .stringType()
                                                             .noDefaultValue());

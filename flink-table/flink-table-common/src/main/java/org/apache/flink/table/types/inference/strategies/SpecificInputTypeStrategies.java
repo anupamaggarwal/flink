@@ -38,6 +38,7 @@ import static org.apache.flink.table.types.inference.InputTypeStrategies.logical
 import static org.apache.flink.table.types.inference.InputTypeStrategies.or;
 import static org.apache.flink.table.types.inference.InputTypeStrategies.repeatingSequence;
 import static org.apache.flink.table.types.inference.InputTypeStrategies.symbol;
+import static org.apache.flink.table.types.logical.StructuredType.StructuredComparison;
 
 /**
  * Entry point for specific input type strategies not covered in {@link InputTypeStrategies}.
@@ -85,9 +86,17 @@ public final class SpecificInputTypeStrategies {
                     logical(LogicalTypeRoot.BOOLEAN),
                     logical(LogicalTypeFamily.NUMERIC));
 
+    /** See {@link JsonQueryOnErrorEmptyArgumentTypeStrategy}. */
+    public static final ArgumentTypeStrategy JSON_QUERY_ON_EMPTY_ERROR_BEHAVIOUR =
+            new JsonQueryOnErrorEmptyArgumentTypeStrategy();
+
     /** Argument type derived from the array element type. */
     public static final ArgumentTypeStrategy ARRAY_ELEMENT_ARG =
             new ArrayElementArgumentTypeStrategy();
+
+    /** Argument type representing the array is comparable. */
+    public static final ArgumentTypeStrategy ARRAY_FULLY_COMPARABLE =
+            new ArrayComparableElementArgumentTypeStrategy(StructuredComparison.FULL);
 
     /**
      * Input strategy for {@link BuiltInFunctionDefinitions#JSON_OBJECT}.

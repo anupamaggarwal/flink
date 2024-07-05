@@ -63,6 +63,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -137,6 +138,10 @@ public final class CatalogManager implements CatalogRegistry, AutoCloseable {
         return catalogModificationListeners;
     }
 
+    public Optional<CatalogDescriptor> getCatalogDescriptor(String catalogName) {
+        return catalogStoreHolder.catalogStore().getCatalog(catalogName);
+    }
+
     public static Builder newBuilder() {
         return new Builder();
     }
@@ -207,7 +212,12 @@ public final class CatalogManager implements CatalogRegistry, AutoCloseable {
                     defaultCatalog,
                     dataTypeFactory != null
                             ? dataTypeFactory
-                            : new DataTypeFactoryImpl(classLoader, config, executionConfig),
+                            : new DataTypeFactoryImpl(
+                                    classLoader,
+                                    config,
+                                    executionConfig == null
+                                            ? null
+                                            : executionConfig.getSerializerConfig()),
                     new ManagedTableListener(classLoader, config),
                     catalogModificationListeners,
                     catalogStoreHolder);
@@ -284,31 +294,74 @@ public final class CatalogManager implements CatalogRegistry, AutoCloseable {
      *
      * @param catalogName the given catalog name under which to create the given catalog
      * @param catalogDescriptor catalog descriptor for creating catalog
+     * @param ignoreIfExists if false exception will be thrown if a catalog exists.
      * @throws CatalogException If the catalog already exists in the catalog store or initialized
      *     catalogs, or if an error occurs while creating the catalog or storing the {@link
      *     CatalogDescriptor}
      */
-    public void createCatalog(String catalogName, CatalogDescriptor catalogDescriptor)
+    public void createCatalog(
+            String catalogName, CatalogDescriptor catalogDescriptor, boolean ignoreIfExists)
             throws CatalogException {
         checkArgument(
                 !StringUtils.isNullOrWhitespaceOnly(catalogName),
                 "Catalog name cannot be null or empty.");
         checkNotNull(catalogDescriptor, "Catalog descriptor cannot be null");
 
-        if (catalogStoreHolder.catalogStore().contains(catalogName)) {
-            throw new CatalogException(
-                    format("Catalog %s already exists in catalog store.", catalogName));
-        }
-        if (catalogs.containsKey(catalogName)) {
-            throw new CatalogException(
-                    format("Catalog %s already exists in initialized catalogs.", catalogName));
-        }
+        boolean catalogExistsInStore = catalogStoreHolder.catalogStore().contains(catalogName);
+        boolean catalogExistsInMemory = catalogs.containsKey(catalogName);
 
-        Catalog catalog = initCatalog(catalogName, catalogDescriptor);
-        catalog.open();
-        catalogs.put(catalogName, catalog);
+        if (catalogExistsInStore || catalogExistsInMemory) {
+            if (!ignoreIfExists) {
+                throw new CatalogException(format("Catalog %s already exists.", catalogName));
+            }
+        } else {
+            // Store the catalog in the catalog store
+            catalogStoreHolder.catalogStore().storeCatalog(catalogName, catalogDescriptor);
 
-        catalogStoreHolder.catalogStore().storeCatalog(catalogName, catalogDescriptor);
+            // Initialize and store the catalog in memory
+            Catalog catalog = initCatalog(catalogName, catalogDescriptor);
+            catalog.open();
+            catalogs.put(catalogName, catalog);
+        }
+    }
+
+    public void createCatalog(String catalogName, CatalogDescriptor catalogDescriptor) {
+        createCatalog(catalogName, catalogDescriptor, false);
+    }
+
+    /**
+     * Alters a catalog under the given name. The catalog name must be unique.
+     *
+     * @param catalogName the given catalog name under which to alter the given catalog
+     * @param catalogChange catalog change to update the underlying catalog descriptor
+     * @throws CatalogException If the catalog neither exists in the catalog store nor in the
+     *     initialized catalogs, or if an error occurs while creating the catalog or storing the
+     *     {@link CatalogDescriptor}
+     */
+    public void alterCatalog(String catalogName, CatalogChange catalogChange)
+            throws CatalogException {
+        checkArgument(
+                !StringUtils.isNullOrWhitespaceOnly(catalogName),
+                "Catalog name cannot be null or empty.");
+        checkNotNull(catalogChange, "Catalog change cannot be null.");
+
+        CatalogStore catalogStore = catalogStoreHolder.catalogStore();
+        Optional<CatalogDescriptor> oldDescriptorOpt = getCatalogDescriptor(catalogName);
+
+        if (catalogStore.contains(catalogName) && oldDescriptorOpt.isPresent()) {
+            CatalogDescriptor newDescriptor = catalogChange.applyChange(oldDescriptorOpt.get());
+            Catalog newCatalog = initCatalog(catalogName, newDescriptor);
+            catalogStore.removeCatalog(catalogName, false);
+            if (catalogs.containsKey(catalogName)) {
+                catalogs.get(catalogName).close();
+            }
+            newCatalog.open();
+            catalogs.put(catalogName, newCatalog);
+            catalogStoreHolder.catalogStore().storeCatalog(catalogName, newDescriptor);
+        } else {
+            throw new CatalogException(
+                    String.format("Catalog %s does not exist in the catalog store.", catalogName));
+        }
     }
 
     private Catalog initCatalog(String catalogName, CatalogDescriptor catalogDescriptor) {
@@ -396,8 +449,7 @@ public final class CatalogManager implements CatalogRegistry, AutoCloseable {
         }
 
         // Get catalog from the CatalogStore.
-        Optional<CatalogDescriptor> optionalDescriptor =
-                catalogStoreHolder.catalogStore().getCatalog(catalogName);
+        Optional<CatalogDescriptor> optionalDescriptor = getCatalogDescriptor(catalogName);
         return optionalDescriptor.map(
                 descriptor -> {
                     Catalog catalog = initCatalog(catalogName, descriptor);
@@ -954,7 +1006,8 @@ public final class CatalogManager implements CatalogRegistry, AutoCloseable {
                                     ignoreIfExists);
 
                     catalog.createTable(path, resolvedListenedTable, ignoreIfExists);
-                    if (resolvedListenedTable instanceof CatalogTable) {
+                    if (resolvedListenedTable instanceof CatalogTable
+                            || resolvedListenedTable instanceof CatalogMaterializedTable) {
                         catalogModificationListeners.forEach(
                                 listener ->
                                         listener.onEvent(
@@ -1141,7 +1194,8 @@ public final class CatalogManager implements CatalogRegistry, AutoCloseable {
                 (catalog, path) -> {
                     final CatalogBaseTable resolvedTable = resolveCatalogBaseTable(table);
                     catalog.alterTable(path, resolvedTable, ignoreIfNotExists);
-                    if (resolvedTable instanceof CatalogTable) {
+                    if (resolvedTable instanceof CatalogTable
+                            || resolvedTable instanceof CatalogMaterializedTable) {
                         catalogModificationListeners.forEach(
                                 listener ->
                                         listener.onEvent(
@@ -1221,7 +1275,9 @@ public final class CatalogManager implements CatalogRegistry, AutoCloseable {
             ObjectIdentifier objectIdentifier, boolean ignoreIfNotExists, boolean isDropTable) {
         Predicate<CatalogBaseTable> filter =
                 isDropTable
-                        ? table -> table instanceof CatalogTable
+                        ? table ->
+                                table instanceof CatalogTable
+                                        || table instanceof CatalogMaterializedTable
                         : table -> table instanceof CatalogView;
         // Same name temporary table or view exists.
         if (filter.test(temporaryTables.get(objectIdentifier))) {
@@ -1309,6 +1365,8 @@ public final class CatalogManager implements CatalogRegistry, AutoCloseable {
         Preconditions.checkNotNull(schemaResolver, "Schema resolver is not initialized.");
         if (baseTable instanceof CatalogTable) {
             return resolveCatalogTable((CatalogTable) baseTable);
+        } else if (baseTable instanceof CatalogMaterializedTable) {
+            return resolveCatalogMaterializedTable((CatalogMaterializedTable) baseTable);
         } else if (baseTable instanceof CatalogView) {
             return resolveCatalogView((CatalogView) baseTable);
         }
@@ -1321,6 +1379,75 @@ public final class CatalogManager implements CatalogRegistry, AutoCloseable {
         Preconditions.checkNotNull(schemaResolver, "Schema resolver is not initialized.");
         if (table instanceof ResolvedCatalogTable) {
             return (ResolvedCatalogTable) table;
+        }
+
+        final ResolvedSchema resolvedSchema = table.getUnresolvedSchema().resolve(schemaResolver);
+
+        // Validate distribution keys are included in physical columns
+        final List<String> physicalColumns =
+                resolvedSchema.getColumns().stream()
+                        .filter(Column::isPhysical)
+                        .map(Column::getName)
+                        .collect(Collectors.toList());
+
+        final Consumer<TableDistribution> distributionValidation =
+                distribution -> {
+                    distribution
+                            .getBucketKeys()
+                            .forEach(
+                                    bucketKey -> {
+                                        if (!physicalColumns.contains(bucketKey)) {
+                                            throw new ValidationException(
+                                                    String.format(
+                                                            "Invalid bucket key '%s'. A bucket key for a distribution must "
+                                                                    + "reference a physical column in the schema. "
+                                                                    + "Available columns are: %s",
+                                                            bucketKey, physicalColumns));
+                                        }
+                                    });
+
+                    distribution
+                            .getBucketCount()
+                            .ifPresent(
+                                    c -> {
+                                        if (c <= 0) {
+                                            throw new ValidationException(
+                                                    String.format(
+                                                            "Invalid bucket count '%s'. The number of "
+                                                                    + "buckets for a distributed table must be at least 1.",
+                                                            c));
+                                        }
+                                    });
+                };
+
+        table.getDistribution().ifPresent(distributionValidation);
+
+        table.getPartitionKeys()
+                .forEach(
+                        partitionKey -> {
+                            if (!physicalColumns.contains(partitionKey)) {
+                                throw new ValidationException(
+                                        String.format(
+                                                "Invalid partition key '%s'. A partition key must "
+                                                        + "reference a physical column in the schema. "
+                                                        + "Available columns are: %s",
+                                                partitionKey, physicalColumns));
+                            }
+                        });
+
+        return new ResolvedCatalogTable(table, resolvedSchema);
+    }
+
+    /**
+     * Resolves a {@link CatalogMaterializedTable} to a validated {@link
+     * ResolvedCatalogMaterializedTable}.
+     */
+    public ResolvedCatalogMaterializedTable resolveCatalogMaterializedTable(
+            CatalogMaterializedTable table) {
+        Preconditions.checkNotNull(schemaResolver, "Schema resolver is not initialized.");
+
+        if (table instanceof ResolvedCatalogMaterializedTable) {
+            return (ResolvedCatalogMaterializedTable) table;
         }
 
         final ResolvedSchema resolvedSchema = table.getUnresolvedSchema().resolve(schemaResolver);
@@ -1344,7 +1471,7 @@ public final class CatalogManager implements CatalogRegistry, AutoCloseable {
                             }
                         });
 
-        return new ResolvedCatalogTable(table, resolvedSchema);
+        return new ResolvedCatalogMaterializedTable(table, resolvedSchema);
     }
 
     /** Resolves a {@link CatalogView} to a validated {@link ResolvedCatalogView}. */

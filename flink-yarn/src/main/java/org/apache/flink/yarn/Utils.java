@@ -20,6 +20,7 @@ package org.apache.flink.yarn;
 
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.configuration.ConfigConstants;
+import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.ConfigUtils;
 import org.apache.flink.configuration.CoreOptions;
 import org.apache.flink.runtime.clusterframework.ContaineredTaskManagerParameters;
@@ -61,6 +62,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -483,7 +485,7 @@ public final class Utils {
      *
      * @param flinkConfig The Flink configuration.
      * @param tmParams Parameters for the task manager.
-     * @param configDirectory The configuration directory for the flink-conf.yaml
+     * @param configDirectory The configuration directory for the config.yaml
      * @param logDirectory The log directory.
      * @param hasLogback Uses logback?
      * @param hasLog4j Uses log4j?
@@ -509,17 +511,13 @@ public final class Utils {
         startCommandValues.put(
                 "jvmmem", ProcessMemoryUtils.generateJvmParametersStr(taskExecutorProcessSpec));
 
-        String javaOpts = flinkConfig.getString(CoreOptions.FLINK_JVM_OPTIONS);
-        if (flinkConfig.getString(CoreOptions.FLINK_TM_JVM_OPTIONS).length() > 0) {
-            javaOpts += " " + flinkConfig.getString(CoreOptions.FLINK_TM_JVM_OPTIONS);
-        }
-        javaOpts += " " + IGNORE_UNRECOGNIZED_VM_OPTIONS;
-
-        // krb5.conf file will be available as local resource in JM/TM container
-        if (hasKrb5) {
-            javaOpts += " -Djava.security.krb5.conf=krb5.conf";
-        }
-        startCommandValues.put("jvmopts", javaOpts);
+        List<ConfigOption<String>> jvmOptions =
+                Arrays.asList(
+                        CoreOptions.FLINK_DEFAULT_JVM_OPTIONS,
+                        CoreOptions.FLINK_JVM_OPTIONS,
+                        CoreOptions.FLINK_DEFAULT_TM_JVM_OPTIONS,
+                        CoreOptions.FLINK_TM_JVM_OPTIONS);
+        startCommandValues.put("jvmopts", generateJvmOptsString(flinkConfig, jvmOptions, hasKrb5));
 
         String logging = "";
         if (hasLogback || hasLog4j) {
@@ -590,6 +588,23 @@ public final class Utils {
                             .trim();
         }
         return template;
+    }
+
+    public static String generateJvmOptsString(
+            org.apache.flink.configuration.Configuration conf,
+            List<ConfigOption<String>> jvmOptions,
+            boolean hasKrb5) {
+        StringBuilder javaOptsSb = new StringBuilder();
+        for (ConfigOption<String> option : jvmOptions) {
+            concatWithSpace(javaOptsSb, conf.get(option));
+        }
+        concatWithSpace(javaOptsSb, IGNORE_UNRECOGNIZED_VM_OPTIONS);
+
+        // krb5.conf file will be available as local resource in JM/TM container
+        if (hasKrb5) {
+            concatWithSpace(javaOptsSb, "-Djava.security.krb5.conf=krb5.conf");
+        }
+        return javaOptsSb.toString().trim();
     }
 
     static boolean isRemotePath(String path) throws IOException {
@@ -693,7 +708,7 @@ public final class Utils {
             org.apache.flink.configuration.Configuration configuration,
             YarnConfiguration yarnConfiguration)
             throws IOException, IllegalArgumentException {
-        String usrlib = configuration.getString(YarnConfigOptions.PROVIDED_USRLIB_DIR);
+        String usrlib = configuration.get(YarnConfigOptions.PROVIDED_USRLIB_DIR);
         if (usrlib == null) {
             return Optional.empty();
         }
@@ -763,8 +778,8 @@ public final class Utils {
             ContainerLaunchContext amContainer,
             org.apache.flink.configuration.Configuration flinkConfig) {
         Map<ApplicationAccessType, String> acls = new HashMap<>();
-        final String viewAcls = flinkConfig.getString(YarnConfigOptions.APPLICATION_VIEW_ACLS);
-        final String modifyAcls = flinkConfig.getString(YarnConfigOptions.APPLICATION_MODIFY_ACLS);
+        final String viewAcls = flinkConfig.get(YarnConfigOptions.APPLICATION_VIEW_ACLS);
+        final String modifyAcls = flinkConfig.get(YarnConfigOptions.APPLICATION_MODIFY_ACLS);
         validateAclString(viewAcls);
         validateAclString(modifyAcls);
 
@@ -795,5 +810,13 @@ public final class Utils {
 
     public static Path getPathFromLocalFilePathStr(String localPathStr) {
         return getPathFromLocalFile(new File(localPathStr));
+    }
+
+    public static void concatWithSpace(StringBuilder sb, String value) {
+        if (value == null || value.isEmpty()) {
+            return;
+        }
+        sb.append(' ');
+        sb.append(value);
     }
 }

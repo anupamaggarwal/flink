@@ -23,7 +23,6 @@ import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.api.JsonExistsOnError;
 import org.apache.flink.table.api.JsonOnNull;
-import org.apache.flink.table.api.JsonQueryOnEmptyOrError;
 import org.apache.flink.table.api.JsonQueryWrapper;
 import org.apache.flink.table.api.JsonType;
 import org.apache.flink.table.api.JsonValueOnEmptyOrError;
@@ -77,8 +76,8 @@ import static org.apache.flink.table.types.inference.InputTypeStrategies.NO_ARGS
 import static org.apache.flink.table.types.inference.InputTypeStrategies.OUTPUT_IF_NULL;
 import static org.apache.flink.table.types.inference.InputTypeStrategies.TYPE_LITERAL;
 import static org.apache.flink.table.types.inference.InputTypeStrategies.and;
-import static org.apache.flink.table.types.inference.InputTypeStrategies.arrayFullyComparableElementType;
 import static org.apache.flink.table.types.inference.InputTypeStrategies.commonArrayType;
+import static org.apache.flink.table.types.inference.InputTypeStrategies.commonMapType;
 import static org.apache.flink.table.types.inference.InputTypeStrategies.commonMultipleArrayType;
 import static org.apache.flink.table.types.inference.InputTypeStrategies.commonType;
 import static org.apache.flink.table.types.inference.InputTypeStrategies.comparable;
@@ -99,9 +98,11 @@ import static org.apache.flink.table.types.inference.TypeStrategies.nullableIfAl
 import static org.apache.flink.table.types.inference.TypeStrategies.nullableIfArgs;
 import static org.apache.flink.table.types.inference.TypeStrategies.varyingString;
 import static org.apache.flink.table.types.inference.strategies.SpecificInputTypeStrategies.ARRAY_ELEMENT_ARG;
+import static org.apache.flink.table.types.inference.strategies.SpecificInputTypeStrategies.ARRAY_FULLY_COMPARABLE;
 import static org.apache.flink.table.types.inference.strategies.SpecificInputTypeStrategies.JSON_ARGUMENT;
 import static org.apache.flink.table.types.inference.strategies.SpecificInputTypeStrategies.TWO_EQUALS_COMPARABLE;
 import static org.apache.flink.table.types.inference.strategies.SpecificInputTypeStrategies.TWO_FULLY_COMPARABLE;
+import static org.apache.flink.table.types.inference.strategies.SpecificTypeStrategies.ARRAY_APPEND_PREPEND;
 
 /** Dictionary of function definitions for all built-in functions. */
 @PublicEvolving
@@ -166,6 +167,16 @@ public final class BuiltInFunctionDefinitions {
                             "org.apache.flink.table.runtime.functions.scalar.MapValuesFunction")
                     .build();
 
+    public static final BuiltInFunctionDefinition MAP_UNION =
+            BuiltInFunctionDefinition.newBuilder()
+                    .name("MAP_UNION")
+                    .kind(SCALAR)
+                    .inputTypeStrategy(commonMapType(1))
+                    .outputTypeStrategy(COMMON)
+                    .runtimeClass(
+                            "org.apache.flink.table.runtime.functions.scalar.MapUnionFunction")
+                    .build();
+
     public static final BuiltInFunctionDefinition MAP_ENTRIES =
             BuiltInFunctionDefinition.newBuilder()
                     .name("MAP_ENTRIES")
@@ -215,6 +226,20 @@ public final class BuiltInFunctionDefinitions {
                             "org.apache.flink.table.runtime.functions.scalar.CoalesceFunction")
                     .build();
 
+    public static final BuiltInFunctionDefinition ARRAY_APPEND =
+            BuiltInFunctionDefinition.newBuilder()
+                    .name("ARRAY_APPEND")
+                    .kind(SCALAR)
+                    .inputTypeStrategy(
+                            sequence(
+                                    Arrays.asList("array", "element"),
+                                    Arrays.asList(
+                                            logical(LogicalTypeRoot.ARRAY), ARRAY_ELEMENT_ARG)))
+                    .outputTypeStrategy(nullableIfArgs(nullableIfArgs(ARRAY_APPEND_PREPEND)))
+                    .runtimeClass(
+                            "org.apache.flink.table.runtime.functions.scalar.ArrayAppendFunction")
+                    .build();
+
     public static final BuiltInFunctionDefinition ARRAY_CONTAINS =
             BuiltInFunctionDefinition.newBuilder()
                     .name("ARRAY_CONTAINS")
@@ -229,6 +254,25 @@ public final class BuiltInFunctionDefinitions {
                                     ConstantArgumentCount.of(0), explicit(DataTypes.BOOLEAN())))
                     .runtimeClass(
                             "org.apache.flink.table.runtime.functions.scalar.ArrayContainsFunction")
+                    .build();
+
+    public static final BuiltInFunctionDefinition ARRAY_SORT =
+            BuiltInFunctionDefinition.newBuilder()
+                    .name("ARRAY_SORT")
+                    .kind(SCALAR)
+                    .inputTypeStrategy(
+                            or(
+                                    sequence(ARRAY_FULLY_COMPARABLE),
+                                    sequence(
+                                            ARRAY_FULLY_COMPARABLE,
+                                            logical(LogicalTypeRoot.BOOLEAN)),
+                                    sequence(
+                                            ARRAY_FULLY_COMPARABLE,
+                                            logical(LogicalTypeRoot.BOOLEAN),
+                                            logical(LogicalTypeRoot.BOOLEAN))))
+                    .outputTypeStrategy(nullableIfArgs(argument(0)))
+                    .runtimeClass(
+                            "org.apache.flink.table.runtime.functions.scalar.ArraySortFunction")
                     .build();
 
     public static final BuiltInFunctionDefinition ARRAY_DISTINCT =
@@ -256,6 +300,20 @@ public final class BuiltInFunctionDefinitions {
                     .outputTypeStrategy(nullableIfArgs(explicit(DataTypes.INT())))
                     .runtimeClass(
                             "org.apache.flink.table.runtime.functions.scalar.ArrayPositionFunction")
+                    .build();
+
+    public static final BuiltInFunctionDefinition ARRAY_PREPEND =
+            BuiltInFunctionDefinition.newBuilder()
+                    .name("ARRAY_PREPEND")
+                    .kind(SCALAR)
+                    .inputTypeStrategy(
+                            sequence(
+                                    Arrays.asList("array", "element"),
+                                    Arrays.asList(
+                                            logical(LogicalTypeRoot.ARRAY), ARRAY_ELEMENT_ARG)))
+                    .outputTypeStrategy(nullableIfArgs(ARRAY_APPEND_PREPEND))
+                    .runtimeClass(
+                            "org.apache.flink.table.runtime.functions.scalar.ArrayPrependFunction")
                     .build();
 
     public static final BuiltInFunctionDefinition ARRAY_REMOVE =
@@ -327,7 +385,7 @@ public final class BuiltInFunctionDefinitions {
             BuiltInFunctionDefinition.newBuilder()
                     .name("ARRAY_MAX")
                     .kind(SCALAR)
-                    .inputTypeStrategy(arrayFullyComparableElementType())
+                    .inputTypeStrategy(sequence(ARRAY_FULLY_COMPARABLE))
                     .outputTypeStrategy(forceNullable(SpecificTypeStrategies.ARRAY_ELEMENT))
                     .runtimeClass(
                             "org.apache.flink.table.runtime.functions.scalar.ArrayMaxFunction")
@@ -355,10 +413,22 @@ public final class BuiltInFunctionDefinitions {
             BuiltInFunctionDefinition.newBuilder()
                     .name("ARRAY_MIN")
                     .kind(SCALAR)
-                    .inputTypeStrategy(arrayFullyComparableElementType())
+                    .inputTypeStrategy(sequence(ARRAY_FULLY_COMPARABLE))
                     .outputTypeStrategy(forceNullable(SpecificTypeStrategies.ARRAY_ELEMENT))
                     .runtimeClass(
                             "org.apache.flink.table.runtime.functions.scalar.ArrayMinFunction")
+                    .build();
+
+    public static final BuiltInFunctionDefinition SPLIT =
+            BuiltInFunctionDefinition.newBuilder()
+                    .name("SPLIT")
+                    .kind(SCALAR)
+                    .inputTypeStrategy(
+                            sequence(
+                                    logical(LogicalTypeFamily.CHARACTER_STRING),
+                                    logical(LogicalTypeFamily.CHARACTER_STRING)))
+                    .outputTypeStrategy(nullableIfArgs(explicit(DataTypes.ARRAY(STRING()))))
+                    .runtimeClass("org.apache.flink.table.runtime.functions.scalar.SplitFunction")
                     .build();
 
     public static final BuiltInFunctionDefinition INTERNAL_REPLICATE_ROWS =
@@ -389,6 +459,26 @@ public final class BuiltInFunctionDefinitions {
                     .outputTypeStrategy(nullableIfArgs(explicit(DataTypes.INT().notNull())))
                     .runtimeProvided()
                     .internal()
+                    .build();
+
+    public static final BuiltInFunctionDefinition ARRAY_EXCEPT =
+            BuiltInFunctionDefinition.newBuilder()
+                    .name("ARRAY_EXCEPT")
+                    .kind(SCALAR)
+                    .inputTypeStrategy(commonArrayType(2))
+                    .outputTypeStrategy(nullableIfArgs(COMMON))
+                    .runtimeClass(
+                            "org.apache.flink.table.runtime.functions.scalar.ArrayExceptFunction")
+                    .build();
+
+    public static final BuiltInFunctionDefinition ARRAY_INTERSECT =
+            BuiltInFunctionDefinition.newBuilder()
+                    .name("ARRAY_INTERSECT")
+                    .kind(SCALAR)
+                    .inputTypeStrategy(commonArrayType(2))
+                    .outputTypeStrategy(nullableIfArgs(COMMON))
+                    .runtimeClass(
+                            "org.apache.flink.table.runtime.functions.scalar.ArrayIntersectFunction")
                     .build();
 
     // --------------------------------------------------------------------------------------------
@@ -743,6 +833,13 @@ public final class BuiltInFunctionDefinitions {
                     .kind(AGGREGATE)
                     .inputTypeStrategy(sequence(ANY))
                     .outputTypeStrategy(argument(0))
+                    .build();
+
+    public static final BuiltInFunctionDefinition ARRAY_AGG =
+            BuiltInFunctionDefinition.newBuilder()
+                    .name("ARRAY_AGG")
+                    .kind(AGGREGATE)
+                    .outputTypeStrategy(nullableIfArgs(SpecificTypeStrategies.ARRAY))
                     .build();
 
     // --------------------------------------------------------------------------------------------
@@ -2304,10 +2401,12 @@ public final class BuiltInFunctionDefinitions {
                             sequence(
                                     logical(LogicalTypeFamily.CHARACTER_STRING),
                                     and(logical(LogicalTypeFamily.CHARACTER_STRING), LITERAL),
+                                    TYPE_LITERAL,
                                     symbol(JsonQueryWrapper.class),
-                                    symbol(JsonQueryOnEmptyOrError.class),
-                                    symbol(JsonQueryOnEmptyOrError.class)))
-                    .outputTypeStrategy(explicit(DataTypes.STRING().nullable()))
+                                    SpecificInputTypeStrategies.JSON_QUERY_ON_EMPTY_ERROR_BEHAVIOUR,
+                                    SpecificInputTypeStrategies
+                                            .JSON_QUERY_ON_EMPTY_ERROR_BEHAVIOUR))
+                    .outputTypeStrategy(forceNullable(argument(2)))
                     .runtimeDeferred()
                     .build();
 

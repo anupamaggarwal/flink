@@ -65,6 +65,8 @@ import org.apache.flink.util.concurrent.FutureUtils;
 
 import org.slf4j.Logger;
 
+import javax.annotation.Nullable;
+
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
@@ -166,9 +168,22 @@ abstract class StateWithExecutionGraph implements State {
 
     @Override
     public void suspend(Throwable cause) {
+        suspend(cause, null);
+    }
+
+    /**
+     * Suspends the underlying {@link ExecutionGraph} and transitions the context to {@link
+     * Finished} state.
+     *
+     * @param cause The reason the job is suspended.
+     * @param statusOverride The state of the resulting {@link ArchivedExecutionGraph}. The
+     *     underlying {@code ExecutionGraph}'s state is not going to be overridden if {@code null}
+     *     is passed.
+     */
+    protected void suspend(Throwable cause, @Nullable JobStatus statusOverride) {
         executionGraph.suspend(cause);
         Preconditions.checkState(executionGraph.getState().isTerminalState());
-        context.goToFinished(ArchivedExecutionGraph.createFrom(executionGraph));
+        context.goToFinished(ArchivedExecutionGraph.createFrom(executionGraph, statusOverride));
     }
 
     @Override
@@ -362,7 +377,7 @@ abstract class StateWithExecutionGraph implements State {
     }
 
     /** Transition to different state when failure occurs. Stays in the same state by default. */
-    abstract void onFailure(Throwable cause);
+    abstract void onFailure(Throwable cause, CompletableFuture<Map<String, String>> failureLabels);
 
     /**
      * Transition to different state when the execution graph reaches a globally terminal state.
@@ -375,7 +390,7 @@ abstract class StateWithExecutionGraph implements State {
     public void handleGlobalFailure(
             Throwable cause, CompletableFuture<Map<String, String>> failureLabels) {
         failureCollection.add(ExceptionHistoryEntry.createGlobal(cause, failureLabels));
-        onFailure(cause);
+        onFailure(cause, failureLabels);
     }
 
     /**
@@ -407,7 +422,8 @@ abstract class StateWithExecutionGraph implements State {
                         ExceptionHistoryEntry.create(execution, taskName, failureLabels));
                 onFailure(
                         ErrorInfo.handleMissingThrowable(
-                                taskExecutionStateTransition.getError(userCodeClassLoader)));
+                                taskExecutionStateTransition.getError(userCodeClassLoader)),
+                        failureLabels);
             }
         }
         return successfulUpdate;

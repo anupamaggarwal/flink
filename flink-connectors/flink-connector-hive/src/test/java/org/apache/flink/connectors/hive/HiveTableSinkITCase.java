@@ -18,14 +18,15 @@
 
 package org.apache.flink.connectors.hive;
 
+import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.api.java.typeutils.RowTypeInfo;
+import org.apache.flink.connector.datagen.source.TestDataGenerators;
 import org.apache.flink.connector.file.table.FileSystemConnectorOptions;
 import org.apache.flink.core.fs.Path;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.streaming.util.FiniteTestSource;
 import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.api.ExplainDetail;
 import org.apache.flink.table.api.Expressions;
@@ -44,7 +45,7 @@ import org.apache.flink.util.CloseableIterator;
 import org.apache.flink.util.CollectionUtil;
 import org.apache.flink.util.TestLoggerExtension;
 
-import org.apache.flink.shaded.guava32.com.google.common.collect.Lists;
+import org.apache.flink.shaded.guava31.com.google.common.collect.Lists;
 
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.junit.jupiter.api.AfterAll;
@@ -792,15 +793,21 @@ class HiveTableSinkITCase {
                                     Row.of(3, "x", "y", "2020-05-03", "9"),
                                     Row.of(4, "x", "y", "2020-05-03", "10"),
                                     Row.of(5, "x", "y", "2020-05-03", "11"));
+                    RowTypeInfo rowTypeInfo =
+                            new RowTypeInfo(
+                                    Types.INT,
+                                    Types.STRING,
+                                    Types.STRING,
+                                    Types.STRING,
+                                    Types.STRING);
+
                     DataStream<Row> stream =
-                            env.addSource(
-                                    new FiniteTestSource<>(data),
-                                    new RowTypeInfo(
-                                            Types.INT,
-                                            Types.STRING,
-                                            Types.STRING,
-                                            Types.STRING,
-                                            Types.STRING));
+                            env.fromSource(
+                                    TestDataGenerators.fromDataWithSnapshotsLatch(
+                                            data, rowTypeInfo),
+                                    WatermarkStrategy.noWatermarks(),
+                                    "Test Source");
+
                     tEnv.createTemporaryView(
                             "my_table", stream, $("a"), $("b"), $("c"), $("d"), $("e"));
 
@@ -886,17 +893,21 @@ class HiveTableSinkITCase {
                                     Row.of(3, "x", "y", "2020-05-03", "9"),
                                     Row.of(4, "x", "y", "2020-05-03", "10"),
                                     Row.of(5, "x", "y", "2020-05-03", "11"));
+                    RowTypeInfo rowTypeInfo =
+                            new RowTypeInfo(
+                                    Types.INT,
+                                    Types.STRING,
+                                    Types.STRING,
+                                    Types.STRING,
+                                    Types.STRING);
+
                     DataStream<Row> stream =
-                            env.addSource(
-                                    new FiniteTestSource<>(data),
-                                    new RowTypeInfo(
-                                            Types.INT,
-                                            Types.STRING,
-                                            Types.STRING,
-                                            Types.STRING,
-                                            Types.STRING));
-                    /*tEnv.createTemporaryView(
-                    "my_table", stream, $("a"), $("b"), $("c"), $("d"), $("e"));*/
+                            env.fromSource(
+                                    TestDataGenerators.fromDataWithSnapshotsLatch(
+                                            data, rowTypeInfo),
+                                    WatermarkStrategy.noWatermarks(),
+                                    "Test Source");
+
                     tEnv.createTemporaryView(
                             "my_table",
                             stream,

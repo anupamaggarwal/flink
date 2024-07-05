@@ -22,7 +22,8 @@ import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.runtime.generated.GeneratedNamespaceAggsHandleFunction;
 import org.apache.flink.table.runtime.operators.aggregate.window.buffers.WindowBuffer;
-import org.apache.flink.table.runtime.operators.window.slicing.SliceSharedAssigner;
+import org.apache.flink.table.runtime.operators.window.MergeCallback;
+import org.apache.flink.table.runtime.operators.window.tvf.slicing.SliceSharedAssigner;
 
 import javax.annotation.Nullable;
 
@@ -34,8 +35,8 @@ import java.util.Optional;
  * An window aggregate processor implementation which works for {@link SliceSharedAssigner}, e.g.
  * hopping windows and cumulative windows.
  */
-public final class SliceSharedWindowAggProcessor extends AbstractWindowAggProcessor
-        implements SliceSharedAssigner.MergeCallback {
+public final class SliceSharedWindowAggProcessor extends AbstractSliceWindowAggProcessor
+        implements MergeCallback<Long, Iterable<Long>> {
     private static final long serialVersionUID = 1L;
 
     private final SliceSharedAssigner sliceSharedAssigner;
@@ -60,7 +61,7 @@ public final class SliceSharedWindowAggProcessor extends AbstractWindowAggProces
     }
 
     @Override
-    public void fireWindow(Long windowEnd) throws Exception {
+    public void fireWindow(long timerTimestamp, Long windowEnd) throws Exception {
         sliceSharedAssigner.mergeSlices(windowEnd, this);
         // we have set accumulator in the merge() method
         RowData aggResult = aggregator.getValue(windowEnd);
@@ -131,7 +132,7 @@ public final class SliceSharedWindowAggProcessor extends AbstractWindowAggProces
     // ------------------------------------------------------------------------------------------
 
     private static final class SliceMergeTargetHelper
-            implements SliceSharedAssigner.MergeCallback, Serializable {
+            implements MergeCallback<Long, Iterable<Long>>, Serializable {
 
         private static final long serialVersionUID = 1L;
         private Long mergeTarget = null;

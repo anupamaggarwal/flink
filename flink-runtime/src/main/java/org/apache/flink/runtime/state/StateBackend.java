@@ -22,13 +22,13 @@ import org.apache.flink.annotation.Experimental;
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
+import org.apache.flink.core.execution.RestoreMode;
 import org.apache.flink.core.execution.SavepointFormatType;
 import org.apache.flink.core.fs.CloseableRegistry;
 import org.apache.flink.metrics.MetricGroup;
 import org.apache.flink.runtime.checkpoint.CheckpointOptions;
 import org.apache.flink.runtime.checkpoint.CheckpointType;
 import org.apache.flink.runtime.execution.Environment;
-import org.apache.flink.runtime.jobgraph.RestoreMode;
 import org.apache.flink.runtime.query.TaskKvStateRegistry;
 import org.apache.flink.runtime.state.ttl.TtlTimeProvider;
 
@@ -103,6 +103,39 @@ public interface StateBackend extends java.io.Serializable {
      */
     <K> CheckpointableKeyedStateBackend<K> createKeyedStateBackend(
             KeyedStateBackendParameters<K> parameters) throws Exception;
+
+    /**
+     * Creates a new {@link AsyncKeyedStateBackend} which supports to access <b>keyed state</b>
+     * asynchronously.
+     *
+     * <p><i>Keyed State</i> is state where each value is bound to a key.
+     *
+     * @param parameters The arguments bundle for creating {@link AsyncKeyedStateBackend}.
+     * @param <K> The type of the keys by which the state is organized.
+     * @return The Async Keyed State Backend for the given job, operator.
+     * @throws Exception This method may forward all exceptions that occur while instantiating the
+     *     backend.
+     */
+    @Experimental
+    default <K> AsyncKeyedStateBackend createAsyncKeyedStateBackend(
+            KeyedStateBackendParameters<K> parameters) throws Exception {
+        throw new UnsupportedOperationException(
+                "Don't support createAsyncKeyedStateBackend by default");
+    }
+
+    /**
+     * Tells if a state backend supports the {@link AsyncKeyedStateBackend}.
+     *
+     * <p>If a state backend supports {@code AsyncKeyedStateBackend}, it could use {@link
+     * #createAsyncKeyedStateBackend(KeyedStateBackendParameters)} to create an async keyed state
+     * backend to access <b>keyed state</b> asynchronously.
+     *
+     * @return If the state backend supports {@link AsyncKeyedStateBackend}.
+     */
+    @Experimental
+    default boolean supportsAsyncKeyedStateBackend() {
+        return false;
+    }
 
     /**
      * Creates a new {@link OperatorStateBackend} that can be used for storing operator state.

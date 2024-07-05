@@ -27,10 +27,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Test for {@link TypeSerializerSnapshot} */
-public class TypeSerializerSnapshotTest {
+class TypeSerializerSnapshotTest {
 
     @Test
-    public void testIllegalSchemaCompatibility() {
+    void testIllegalSchemaCompatibility() {
         TypeSerializerSnapshot<Integer> illegalSnapshot =
                 new NotCompletedTypeSerializerSnapshot() {};
 
@@ -48,7 +48,7 @@ public class TypeSerializerSnapshotTest {
     }
 
     @Test
-    public void testNewSchemaCompatibility() {
+    void testNewSchemaCompatibility() {
         TypeSerializerSnapshot<Integer> legalSnapshot =
                 new NotCompletedTypeSerializerSnapshot() {
                     @Override
@@ -80,7 +80,7 @@ public class TypeSerializerSnapshotTest {
     }
 
     @Test
-    public void testOldSchemaCompatibility() {
+    void testOldSchemaCompatibility() {
         TypeSerializerSnapshot<Integer> legalSnapshot =
                 new NotCompletedTypeSerializerSnapshot() {
 
@@ -105,7 +105,7 @@ public class TypeSerializerSnapshotTest {
     }
 
     @Test
-    public void testNestedSchemaCompatibility() {
+    void testNestedSchemaCompatibility() {
         TypeSerializerSnapshot<Integer> innerSnapshot =
                 new NotCompletedTypeSerializerSnapshot() {
                     @Override

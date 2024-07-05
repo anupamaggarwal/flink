@@ -30,6 +30,7 @@ import org.apache.flink.configuration.IllegalConfigurationException;
 import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.configuration.description.InlineElement;
 import org.apache.flink.contrib.streaming.state.RocksDBMemoryControllerUtils.RocksDBMemoryFactory;
+import org.apache.flink.contrib.streaming.state.sstmerge.RocksDBManualCompactionConfig;
 import org.apache.flink.core.execution.SavepointFormatType;
 import org.apache.flink.core.fs.Path;
 import org.apache.flink.runtime.execution.Environment;
@@ -46,6 +47,7 @@ import org.apache.flink.util.AbstractID;
 import org.apache.flink.util.DynamicCodeLoadingException;
 import org.apache.flink.util.FileUtils;
 import org.apache.flink.util.FlinkRuntimeException;
+import org.apache.flink.util.MdcUtils;
 import org.apache.flink.util.Preconditions;
 import org.apache.flink.util.TernaryBoolean;
 
@@ -64,13 +66,17 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Random;
 import java.util.UUID;
 import java.util.function.Supplier;
 
 import static org.apache.flink.configuration.description.TextElement.text;
+import static org.apache.flink.contrib.streaming.state.RocksDBConfigurableOptions.INCREMENTAL_RESTORE_ASYNC_COMPACT_AFTER_RESCALE;
 import static org.apache.flink.contrib.streaming.state.RocksDBConfigurableOptions.RESTORE_OVERLAP_FRACTION_THRESHOLD;
+import static org.apache.flink.contrib.streaming.state.RocksDBConfigurableOptions.USE_DELETE_FILES_IN_RANGE_DURING_RESCALING;
+import static org.apache.flink.contrib.streaming.state.RocksDBConfigurableOptions.USE_INGEST_DB_RESTORE_MODE;
 import static org.apache.flink.contrib.streaming.state.RocksDBConfigurableOptions.WRITE_BATCH_SIZE;
 import static org.apache.flink.contrib.streaming.state.RocksDBOptions.CHECKPOINT_TRANSFER_THREAD_NUM;
 import static org.apache.flink.util.Preconditions.checkArgument;
@@ -168,11 +174,31 @@ public class EmbeddedRocksDBStateBackend extends AbstractManagedMemoryStateBacke
      * The threshold of the overlap fraction between the handle's key-group range and target
      * key-group range.
      */
-    private double overlapFractionThreshold;
+    private final double overlapFractionThreshold;
+
+    /**
+     * Whether we use the optimized Ingest/Clip DB method for rescaling RocksDB incremental
+     * checkpoints.
+     */
+    private final TernaryBoolean useIngestDbRestoreMode;
+
+    /**
+     * Whether we trigger an async compaction after restores for which we detect state in the
+     * database (including tombstones) that exceed the proclaimed key-groups range of the backend.
+     */
+    private final TernaryBoolean incrementalRestoreAsyncCompactAfterRescale;
+
+    /**
+     * Whether to leverage deleteFilesInRange API to clean up useless rocksdb files during
+     * rescaling.
+     */
+    private final TernaryBoolean rescalingUseDeleteFilesInRange;
 
     /** Factory for Write Buffer Manager and Block Cache. */
     private RocksDBMemoryFactory rocksDBMemoryFactory;
     // ------------------------------------------------------------------------
+
+    private final RocksDBManualCompactionConfig manualCompactionConfig;
 
     /** Creates a new {@code EmbeddedRocksDBStateBackend} for storing local state. */
     public EmbeddedRocksDBStateBackend() {
@@ -202,6 +228,10 @@ public class EmbeddedRocksDBStateBackend extends AbstractManagedMemoryStateBacke
         this.overlapFractionThreshold = UNDEFINED_OVERLAP_FRACTION_THRESHOLD;
         this.rocksDBMemoryFactory = RocksDBMemoryFactory.DEFAULT;
         this.priorityQueueConfig = new RocksDBPriorityQueueConfig();
+        this.useIngestDbRestoreMode = TernaryBoolean.UNDEFINED;
+        this.incrementalRestoreAsyncCompactAfterRescale = TernaryBoolean.UNDEFINED;
+        this.rescalingUseDeleteFilesInRange = TernaryBoolean.UNDEFINED;
+        this.manualCompactionConfig = null;
     }
 
     /**
@@ -296,7 +326,28 @@ public class EmbeddedRocksDBStateBackend extends AbstractManagedMemoryStateBacke
                 overlapFractionThreshold >= 0 && this.overlapFractionThreshold <= 1,
                 "Overlap fraction threshold of restoring should be between 0 and 1");
 
+        incrementalRestoreAsyncCompactAfterRescale =
+                TernaryBoolean.mergeTernaryBooleanWithConfig(
+                        original.incrementalRestoreAsyncCompactAfterRescale,
+                        INCREMENTAL_RESTORE_ASYNC_COMPACT_AFTER_RESCALE,
+                        config);
+
+        useIngestDbRestoreMode =
+                TernaryBoolean.mergeTernaryBooleanWithConfig(
+                        original.useIngestDbRestoreMode, USE_INGEST_DB_RESTORE_MODE, config);
+
+        rescalingUseDeleteFilesInRange =
+                TernaryBoolean.mergeTernaryBooleanWithConfig(
+                        original.rescalingUseDeleteFilesInRange,
+                        USE_DELETE_FILES_IN_RANGE_DURING_RESCALING,
+                        config);
+
         this.rocksDBMemoryFactory = original.rocksDBMemoryFactory;
+
+        this.manualCompactionConfig =
+                original.manualCompactionConfig != null
+                        ? original.manualCompactionConfig
+                        : RocksDBManualCompactionConfig.from(config);
     }
 
     // ------------------------------------------------------------------------
@@ -466,7 +517,19 @@ public class EmbeddedRocksDBStateBackend extends AbstractManagedMemoryStateBacke
                         .setNativeMetricOptions(
                                 resourceContainer.getMemoryWatcherOptions(nativeMetricOptions))
                         .setWriteBatchSize(getWriteBatchSize())
-                        .setOverlapFractionThreshold(getOverlapFractionThreshold());
+                        .setOverlapFractionThreshold(getOverlapFractionThreshold())
+                        .setIncrementalRestoreAsyncCompactAfterRescale(
+                                getIncrementalRestoreAsyncCompactAfterRescale())
+                        .setUseIngestDbRestoreMode(getUseIngestDbRestoreMode())
+                        .setRescalingUseDeleteFilesInRange(isRescalingUseDeleteFilesInRange())
+                        .setIOExecutor(
+                                MdcUtils.scopeToJob(
+                                        jobId,
+                                        parameters.getEnv().getIOManager().getExecutorService()))
+                        .setManualCompactionConfig(
+                                manualCompactionConfig == null
+                                        ? RocksDBManualCompactionConfig.getDefault()
+                                        : manualCompactionConfig);
         return builder.build();
     }
 
@@ -698,7 +761,7 @@ public class EmbeddedRocksDBStateBackend extends AbstractManagedMemoryStateBacke
      * Sets the predefined options for RocksDB.
      *
      * <p>If user-configured options within {@link RocksDBConfigurableOptions} is set (through
-     * flink-conf.yaml) or a user-defined options factory is set (via {@link
+     * config.yaml) or a user-defined options factory is set (via {@link
      * #setRocksDBOptions(RocksDBOptionsFactory)}), then the options from the factory are applied on
      * top of the here specified predefined options and customized options.
      *
@@ -714,7 +777,7 @@ public class EmbeddedRocksDBStateBackend extends AbstractManagedMemoryStateBacke
      * PredefinedOptions#DEFAULT}.
      *
      * <p>If user-configured options within {@link RocksDBConfigurableOptions} is set (through
-     * flink-conf.yaml) of a user-defined options factory is set (via {@link
+     * config.yaml) of a user-defined options factory is set (via {@link
      * #setRocksDBOptions(RocksDBOptionsFactory)}), then the options from the factory are applied on
      * top of the predefined and customized options.
      *
@@ -805,6 +868,20 @@ public class EmbeddedRocksDBStateBackend extends AbstractManagedMemoryStateBacke
                 : overlapFractionThreshold;
     }
 
+    boolean getIncrementalRestoreAsyncCompactAfterRescale() {
+        return incrementalRestoreAsyncCompactAfterRescale.getOrDefault(
+                INCREMENTAL_RESTORE_ASYNC_COMPACT_AFTER_RESCALE.defaultValue());
+    }
+
+    boolean getUseIngestDbRestoreMode() {
+        return useIngestDbRestoreMode.getOrDefault(USE_INGEST_DB_RESTORE_MODE.defaultValue());
+    }
+
+    boolean isRescalingUseDeleteFilesInRange() {
+        return rescalingUseDeleteFilesInRange.getOrDefault(
+                USE_DELETE_FILES_IN_RANGE_DURING_RESCALING.defaultValue());
+    }
+
     // ------------------------------------------------------------------------
     //  utilities
     // ------------------------------------------------------------------------
@@ -814,6 +891,8 @@ public class EmbeddedRocksDBStateBackend extends AbstractManagedMemoryStateBacke
             base = new Configuration();
         }
         Configuration configuration = new Configuration();
+        Map<String, String> baseMap = base.toMap();
+        Map<String, String> onTopMap = onTop.toMap();
         for (ConfigOption<?> option : RocksDBConfigurableOptions.CANDIDATE_CONFIGS) {
             Optional<?> baseValue = base.getOptional(option);
             Optional<?> topValue = onTop.getOptional(option);
@@ -821,7 +900,11 @@ public class EmbeddedRocksDBStateBackend extends AbstractManagedMemoryStateBacke
             if (topValue.isPresent() || baseValue.isPresent()) {
                 Object validValue = topValue.isPresent() ? topValue.get() : baseValue.get();
                 RocksDBConfigurableOptions.checkArgumentValid(option, validValue);
-                configuration.setString(option.key(), validValue.toString());
+                String valueString =
+                        topValue.isPresent()
+                                ? onTopMap.get(option.key())
+                                : baseMap.get(option.key());
+                configuration.setString(option.key(), valueString);
             }
         }
         return configuration;

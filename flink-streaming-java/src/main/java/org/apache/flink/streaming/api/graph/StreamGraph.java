@@ -436,8 +436,8 @@ public class StreamGraph implements Pipeline {
 
         setSerializers(
                 vertexID,
-                in1TypeInfo.createSerializer(executionConfig),
-                in2TypeInfo.createSerializer(executionConfig),
+                in1TypeInfo.createSerializer(executionConfig.getSerializerConfig()),
+                in2TypeInfo.createSerializer(executionConfig.getSerializerConfig()),
                 outSerializer);
 
         if (taskOperatorFactory.isOutputTypeConfigurable()) {
@@ -486,7 +486,7 @@ public class StreamGraph implements Pipeline {
             @Nullable String slotSharingGroup,
             @Nullable String coLocationGroup,
             Class<? extends TaskInvokable> vertexClass,
-            StreamOperatorFactory<?> operatorFactory,
+            @Nullable StreamOperatorFactory<?> operatorFactory,
             String operatorName) {
 
         if (streamNodes.containsKey(vertexID)) {
@@ -816,7 +816,10 @@ public class StreamGraph implements Pipeline {
 
         vertex.setSerializersIn(
                 inTypeInfos.stream()
-                        .map(typeInfo -> typeInfo.createSerializer(executionConfig))
+                        .map(
+                                typeInfo ->
+                                        typeInfo.createSerializer(
+                                                executionConfig.getSerializerConfig()))
                         .toArray(TypeSerializer[]::new));
         vertex.setSerializerOut(out);
     }
@@ -888,14 +891,6 @@ public class StreamGraph implements Pipeline {
 
     public Collection<StreamNode> getStreamNodes() {
         return streamNodes.values();
-    }
-
-    public Set<Tuple2<Integer, StreamOperatorFactory<?>>> getAllOperatorFactory() {
-        Set<Tuple2<Integer, StreamOperatorFactory<?>>> operatorSet = new HashSet<>();
-        for (StreamNode vertex : streamNodes.values()) {
-            operatorSet.add(new Tuple2<>(vertex.getId(), vertex.getOperatorFactory()));
-        }
-        return operatorSet;
     }
 
     public String getBrokerID(Integer vertexID) {
@@ -1014,7 +1009,7 @@ public class StreamGraph implements Pipeline {
 
     private <T> TypeSerializer<T> createSerializer(TypeInformation<T> typeInfo) {
         return typeInfo != null && !(typeInfo instanceof MissingTypeInfo)
-                ? typeInfo.createSerializer(executionConfig)
+                ? typeInfo.createSerializer(executionConfig.getSerializerConfig())
                 : null;
     }
 

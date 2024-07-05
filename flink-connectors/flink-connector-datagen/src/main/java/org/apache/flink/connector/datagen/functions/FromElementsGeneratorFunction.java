@@ -82,7 +82,7 @@ public class FromElementsGeneratorFunction<OUT>
             TypeInformation<OUT> typeInfo, ExecutionConfig config, Iterable<OUT> elements) {
         // must not have null elements and mixed elements
         checkIterable(elements, typeInfo.getTypeClass());
-        this.serializer = typeInfo.createSerializer(config);
+        this.serializer = typeInfo.createSerializer(config.getSerializerConfig());
         this.elements = elements;
         trySerialize(elements);
     }
@@ -95,7 +95,7 @@ public class FromElementsGeneratorFunction<OUT>
 
     private void serializeElements(Iterable<OUT> elements) throws IOException {
         Preconditions.checkState(serializer != null, "serializer not set");
-        LOG.info("Serializing elements using  " + serializer);
+        LOG.info("Serializing elements using  {}", serializer);
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         DataOutputViewStreamWrapper wrapper = new DataOutputViewStreamWrapper(baos);
 
@@ -152,7 +152,8 @@ public class FromElementsGeneratorFunction<OUT>
                 elements != null,
                 "The output type should've been specified before shipping the graph to the cluster");
         checkIterable(elements, outTypeInfo.getTypeClass());
-        TypeSerializer<OUT> newSerializer = outTypeInfo.createSerializer(executionConfig);
+        TypeSerializer<OUT> newSerializer =
+                outTypeInfo.createSerializer(executionConfig.getSerializerConfig());
         if (Objects.equals(serializer, newSerializer)) {
             return;
         }

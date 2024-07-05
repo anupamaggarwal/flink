@@ -24,6 +24,7 @@ import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.eventtime.IndexedCombinedWatermarkStatus;
+import org.apache.flink.api.common.operators.MailboxExecutor;
 import org.apache.flink.api.common.state.KeyedStateStore;
 import org.apache.flink.api.common.state.State;
 import org.apache.flink.api.common.state.StateDescriptor;
@@ -63,6 +64,8 @@ import org.apache.flink.util.Preconditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nullable;
+
 import java.io.Serializable;
 import java.util.Arrays;
 import java.util.Collections;
@@ -93,6 +96,7 @@ import static org.apache.flink.util.Preconditions.checkState;
 public abstract class AbstractStreamOperator<OUT>
         implements StreamOperator<OUT>,
                 SetupableStreamOperator<OUT>,
+                YieldingOperator<OUT>,
                 CheckpointedStreamOperator,
                 KeyContextHandler,
                 Serializable {
@@ -120,6 +124,10 @@ public abstract class AbstractStreamOperator<OUT>
     /** The runtime context for UDFs. */
     private transient StreamingRuntimeContext runtimeContext;
 
+    private transient @Nullable MailboxExecutor mailboxExecutor;
+
+    private transient @Nullable MailboxWatermarkProcessor watermarkProcessor;
+
     // ---------------- key/value state ------------------
 
     /**
@@ -128,7 +136,7 @@ public abstract class AbstractStreamOperator<OUT>
      *
      * <p>This is for elements from the first input.
      */
-    private transient KeySelector<?, ?> stateKeySelector1;
+    protected transient KeySelector<?, ?> stateKeySelector1;
 
     /**
      * {@code KeySelector} for extracting a key from an element being processed. This is used to
@@ -136,11 +144,11 @@ public abstract class AbstractStreamOperator<OUT>
      *
      * <p>This is for elements from the second input.
      */
-    private transient KeySelector<?, ?> stateKeySelector2;
+    protected transient KeySelector<?, ?> stateKeySelector2;
 
-    private transient StreamOperatorStateHandler stateHandler;
+    protected transient StreamOperatorStateHandler stateHandler;
 
-    private transient InternalTimeServiceManager<?> timeServiceManager;
+    protected transient InternalTimeServiceManager<?> timeServiceManager;
 
     // --------------- Metrics ---------------------------
 
@@ -153,10 +161,8 @@ public abstract class AbstractStreamOperator<OUT>
 
     protected transient ProcessingTimeService processingTimeService;
 
-    protected transient RecordAttributes lastRecordAttributes1 =
-            RecordAttributes.EMPTY_RECORD_ATTRIBUTES;
-    protected transient RecordAttributes lastRecordAttributes2 =
-            RecordAttributes.EMPTY_RECORD_ATTRIBUTES;
+    protected transient RecordAttributes lastRecordAttributes1;
+    protected transient RecordAttributes lastRecordAttributes2;
 
     // ------------------------------------------------------------------------
     //  Life Cycle
@@ -179,7 +185,7 @@ public abstract class AbstractStreamOperator<OUT>
 
         try {
             Configuration taskManagerConfig = environment.getTaskManagerInfo().getConfiguration();
-            int historySize = taskManagerConfig.getInteger(MetricOptions.LATENCY_HISTORY_SIZE);
+            int historySize = taskManagerConfig.get(MetricOptions.LATENCY_HISTORY_SIZE);
             if (historySize <= 0) {
                 LOG.warn(
                         "{} has been set to a value equal or below 0: {}. Using default.",
@@ -189,7 +195,7 @@ public abstract class AbstractStreamOperator<OUT>
             }
 
             final String configuredGranularity =
-                    taskManagerConfig.getString(MetricOptions.LATENCY_SOURCE_GRANULARITY);
+                    taskManagerConfig.get(MetricOptions.LATENCY_SOURCE_GRANULARITY);
             LatencyStats.Granularity granularity;
             try {
                 granularity =
@@ -235,6 +241,9 @@ public abstract class AbstractStreamOperator<OUT>
 
         stateKeySelector1 = config.getStatePartitioner(0, getUserCodeClassloader());
         stateKeySelector2 = config.getStatePartitioner(1, getUserCodeClassloader());
+
+        lastRecordAttributes1 = RecordAttributes.EMPTY_RECORD_ATTRIBUTES;
+        lastRecordAttributes2 = RecordAttributes.EMPTY_RECORD_ATTRIBUTES;
     }
 
     /**
@@ -252,7 +261,7 @@ public abstract class AbstractStreamOperator<OUT>
     }
 
     @Override
-    public final void initializeState(StreamTaskStateInitializer streamTaskStateManager)
+    public void initializeState(StreamTaskStateInitializer streamTaskStateManager)
             throws Exception {
 
         final TypeSerializer<?> keySerializer =
@@ -310,6 +319,37 @@ public abstract class AbstractStreamOperator<OUT>
         return false;
     }
 
+    @Internal
+    @Override
+    public void setMailboxExecutor(MailboxExecutor mailboxExecutor) {
+        this.mailboxExecutor = mailboxExecutor;
+    }
+
+    /**
+     * Can be overridden to disable splittable timers for this particular operator even if config
+     * option is enabled. By default, splittable timers are disabled.
+     *
+     * @return {@code true} if splittable timers should be used (subject to {@link
+     *     StreamConfig#isUnalignedCheckpointsEnabled()} and {@link
+     *     StreamConfig#isUnalignedCheckpointsSplittableTimersEnabled()}. {@code false} if
+     *     splittable timers should never be used.
+     */
+    @Internal
+    public boolean useSplittableTimers() {
+        return false;
+    }
+
+    @Internal
+    private boolean areSplittableTimersConfigured() {
+        return areSplittableTimersConfigured(config);
+    }
+
+    static boolean areSplittableTimersConfigured(StreamConfig config) {
+        return config.isCheckpointingEnabled()
+                && config.isUnalignedCheckpointsEnabled()
+                && config.isUnalignedCheckpointsSplittableTimersEnabled();
+    }
+
     /**
      * This method is called immediately before any elements are processed, it should contain the
      * operator's initialization logic, e.g. state initialization.
@@ -319,7 +359,15 @@ public abstract class AbstractStreamOperator<OUT>
      * @throws Exception An exception in this method causes the operator to fail.
      */
     @Override
-    public void open() throws Exception {}
+    public void open() throws Exception {
+        if (useSplittableTimers()
+                && areSplittableTimersConfigured()
+                && getTimeServiceManager().isPresent()) {
+            this.watermarkProcessor =
+                    new MailboxWatermarkProcessor(
+                            output, mailboxExecutor, getTimeServiceManager().get());
+        }
+    }
 
     @Override
     public void finish() throws Exception {}
@@ -338,7 +386,7 @@ public abstract class AbstractStreamOperator<OUT>
     }
 
     @Override
-    public final OperatorSnapshotFutures snapshotState(
+    public OperatorSnapshotFutures snapshotState(
             long checkpointId,
             long timestamp,
             CheckpointOptions checkpointOptions,
@@ -530,6 +578,14 @@ public abstract class AbstractStreamOperator<OUT>
         return stateHandler.getKeyedStateStore().orElse(null);
     }
 
+    protected KeySelector<?, ?> getStateKeySelector1() {
+        return stateKeySelector1;
+    }
+
+    protected KeySelector<?, ?> getStateKeySelector2() {
+        return stateKeySelector2;
+    }
+
     // ------------------------------------------------------------------------
     //  Context and chaining properties
     // ------------------------------------------------------------------------
@@ -609,6 +665,14 @@ public abstract class AbstractStreamOperator<OUT>
     }
 
     public void processWatermark(Watermark mark) throws Exception {
+        if (watermarkProcessor != null) {
+            watermarkProcessor.emitWatermarkInsideMailbox(mark);
+        } else {
+            emitWatermarkDirectly(mark);
+        }
+    }
+
+    private void emitWatermarkDirectly(Watermark mark) throws Exception {
         if (timeServiceManager != null) {
             timeServiceManager.advanceWatermark(mark);
         }

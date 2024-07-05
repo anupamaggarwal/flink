@@ -47,6 +47,7 @@ import org.apache.flink.runtime.state.CompletedCheckpointStorageLocation;
 import org.apache.flink.runtime.state.memory.ByteStreamStateHandle;
 import org.apache.flink.util.ExceptionUtils;
 import org.apache.flink.util.FlinkRuntimeException;
+import org.apache.flink.util.MdcUtils;
 import org.apache.flink.util.Preconditions;
 import org.apache.flink.util.StringUtils;
 import org.apache.flink.util.clock.Clock;
@@ -795,29 +796,31 @@ public class CheckpointCoordinator {
             triggerTasks(request, timestamp, checkpoint)
                     .exceptionally(
                             failure -> {
-                                LOG.info(
-                                        "Triggering Checkpoint {} for job {} failed due to {}",
-                                        checkpoint.getCheckpointID(),
-                                        job,
-                                        failure);
-
-                                final CheckpointException cause;
-                                if (failure instanceof CheckpointException) {
-                                    cause = (CheckpointException) failure;
-                                } else {
-                                    cause =
-                                            new CheckpointException(
-                                                    CheckpointFailureReason
-                                                            .TRIGGER_CHECKPOINT_FAILURE,
-                                                    failure);
+                                try (MdcUtils.MdcCloseable ignored =
+                                        MdcUtils.withContext(MdcUtils.asContextData(job))) {
+                                    LOG.info(
+                                            "Triggering Checkpoint {} for job {} failed due to {}",
+                                            checkpoint.getCheckpointID(),
+                                            job,
+                                            failure);
+                                    final CheckpointException cause;
+                                    if (failure instanceof CheckpointException) {
+                                        cause = (CheckpointException) failure;
+                                    } else {
+                                        cause =
+                                                new CheckpointException(
+                                                        CheckpointFailureReason
+                                                                .TRIGGER_CHECKPOINT_FAILURE,
+                                                        failure);
+                                    }
+                                    timer.execute(
+                                            () -> {
+                                                synchronized (lock) {
+                                                    abortPendingCheckpoint(checkpoint, cause);
+                                                }
+                                            });
+                                    return null;
                                 }
-                                timer.execute(
-                                        () -> {
-                                            synchronized (lock) {
-                                                abortPendingCheckpoint(checkpoint, cause);
-                                            }
-                                        });
-                                return null;
                             });
 
             // It is possible that the tasks has finished
@@ -1042,10 +1045,10 @@ public class CheckpointCoordinator {
             @Nullable PendingCheckpoint checkpoint,
             CheckpointProperties checkpointProperties,
             Throwable throwable) {
-        // beautify the stack trace a bit
-        throwable = ExceptionUtils.stripCompletionException(throwable);
-
         try {
+            // beautify the stack trace a bit
+            throwable = ExceptionUtils.stripCompletionException(throwable);
+
             coordinatorsToCheckpoint.forEach(
                     OperatorCoordinatorCheckpointContext::abortCurrentTriggering);
 
@@ -1061,6 +1064,10 @@ public class CheckpointCoordinator {
                 failureManager.handleCheckpointException(
                         checkpoint, checkpointProperties, cause, null, job, null, statsTracker);
             }
+        } catch (Throwable secondThrowable) {
+            secondThrowable.addSuppressed(throwable);
+            throw secondThrowable;
+
         } finally {
             isTriggering = false;
             executeQueuedRequest();
@@ -1907,7 +1914,7 @@ public class CheckpointCoordinator {
                 checkpointProperties = CheckpointProperties.forUnclaimedSnapshot();
                 break;
             default:
-                throw new IllegalArgumentException("Unknown snapshot restore mode");
+                throw new IllegalArgumentException("Unknown snapshot claim mode");
         }
 
         // Load the savepoint as a checkpoint into the system
@@ -2039,8 +2046,13 @@ public class CheckpointCoordinator {
                     isPeriodicCheckpointingConfigured(),
                     "Can not start checkpoint scheduler, if no periodic checkpointing is configured");
 
-            // make sure all prior timers are cancelled
-            stopCheckpointScheduler();
+            if (isPeriodicCheckpointingStarted()) {
+                // cancel previously scheduled checkpoints and spare savepoints.
+                // TODO: Introduce a more general solution to the race condition
+                //  between different checkpoint scheduling triggers.
+                //  https://issues.apache.org/jira/browse/FLINK-34519
+                stopCheckpointScheduler();
+            }
 
             periodicScheduling = true;
             scheduleTriggerWithDelay(clock.relativeTimeMillis(), getRandomInitDelay());
@@ -2133,14 +2145,15 @@ public class CheckpointCoordinator {
     //  job status listener that schedules / cancels periodic checkpoints
     // ------------------------------------------------------------------------
 
-    public JobStatusListener createActivatorDeactivator() {
+    public JobStatusListener createActivatorDeactivator(boolean allTasksOutputNonBlocking) {
         synchronized (lock) {
             if (shutdown) {
                 throw new IllegalArgumentException("Checkpoint coordinator is shut down");
             }
 
             if (jobStatusListener == null) {
-                jobStatusListener = new CheckpointCoordinatorDeActivator(this);
+                jobStatusListener =
+                        new CheckpointCoordinatorDeActivator(this, allTasksOutputNonBlocking);
             }
 
             return jobStatusListener;

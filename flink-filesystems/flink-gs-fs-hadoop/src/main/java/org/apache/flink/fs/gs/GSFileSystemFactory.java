@@ -25,8 +25,11 @@ import org.apache.flink.core.fs.FileSystemFactory;
 import org.apache.flink.fs.gs.utils.ConfigUtils;
 import org.apache.flink.util.Preconditions;
 
+import com.google.api.gax.retrying.RetrySettings;
 import com.google.auth.oauth2.GoogleCredentials;
+import com.google.cloud.ServiceOptions;
 import com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem;
+import com.google.cloud.http.HttpTransportOptions;
 import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageOptions;
 import org.apache.hadoop.fs.Path;
@@ -78,8 +81,6 @@ public class GSFileSystemFactory implements FileSystemFactory {
 
     @Override
     public void configure(Configuration flinkConfig) {
-        LOGGER.info("Configuring GSFileSystemFactory with Flink configuration {}", flinkConfig);
-
         Preconditions.checkNotNull(flinkConfig);
 
         ConfigUtils.ConfigContext configContext = new RuntimeConfigContext();
@@ -94,6 +95,8 @@ public class GSFileSystemFactory implements FileSystemFactory {
         LOGGER.info("Using file system options {}", fileSystemOptions);
 
         StorageOptions.Builder storageOptionsBuilder = StorageOptions.newBuilder();
+        storageOptionsBuilder.setTransportOptions(getHttpTransportOptions(fileSystemOptions));
+        storageOptionsBuilder.setRetrySettings(getRetrySettings(fileSystemOptions));
 
         // get storage credentials
         Optional<GoogleCredentials> credentials =
@@ -104,6 +107,34 @@ public class GSFileSystemFactory implements FileSystemFactory {
         ConfigUtils.getGcsRootUrl(hadoopConfig).ifPresent(storageOptionsBuilder::setHost);
 
         this.storage = storageOptionsBuilder.build().getService();
+    }
+
+    private HttpTransportOptions getHttpTransportOptions(GSFileSystemOptions fileSystemOptions) {
+        Optional<Integer> connectionTimeout = fileSystemOptions.getHTTPConnectionTimeout();
+        Optional<Integer> readTimeout = fileSystemOptions.getHTTPReadTimeout();
+        HttpTransportOptions.Builder httpTransportOptionsBuilder =
+                HttpTransportOptions.newBuilder();
+        connectionTimeout.ifPresent(httpTransportOptionsBuilder::setConnectTimeout);
+        readTimeout.ifPresent(httpTransportOptionsBuilder::setReadTimeout);
+        return httpTransportOptionsBuilder.build();
+    }
+
+    private RetrySettings getRetrySettings(GSFileSystemOptions fileSystemOptions) {
+        Optional<Integer> maxAttempts = fileSystemOptions.getMaxAttempts();
+        Optional<org.threeten.bp.Duration> initialRpcTimeout =
+                fileSystemOptions.getInitialRpcTimeout();
+        Optional<Double> rpcTimeoutMultiplier = fileSystemOptions.getRpcTimeoutMultiplier();
+        Optional<org.threeten.bp.Duration> maxRpcTimeout = fileSystemOptions.getMaxRpcTimeout();
+        Optional<org.threeten.bp.Duration> totalTimeout = fileSystemOptions.getTotalTimeout();
+        RetrySettings.Builder retrySettingsBuilder =
+                ServiceOptions.getDefaultRetrySettings().toBuilder();
+
+        maxAttempts.ifPresent(retrySettingsBuilder::setMaxAttempts);
+        initialRpcTimeout.ifPresent(retrySettingsBuilder::setInitialRpcTimeout);
+        rpcTimeoutMultiplier.ifPresent(retrySettingsBuilder::setRpcTimeoutMultiplier);
+        maxRpcTimeout.ifPresent(retrySettingsBuilder::setMaxRpcTimeout);
+        totalTimeout.ifPresent(retrySettingsBuilder::setTotalTimeout);
+        return retrySettingsBuilder.build();
     }
 
     @Override

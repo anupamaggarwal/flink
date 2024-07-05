@@ -22,6 +22,7 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.runtime.checkpoint.CheckpointMetaData;
 import org.apache.flink.runtime.checkpoint.CheckpointMetrics;
 import org.apache.flink.runtime.checkpoint.InflightDataRescalingDescriptor;
+import org.apache.flink.runtime.checkpoint.OperatorSubtaskState;
 import org.apache.flink.runtime.checkpoint.PrioritizedOperatorSubtaskState;
 import org.apache.flink.runtime.checkpoint.SubTaskInitializationMetrics;
 import org.apache.flink.runtime.checkpoint.TaskStateSnapshot;
@@ -86,10 +87,16 @@ final class SavepointTaskStateManager implements TaskStateManager {
         return prioritizedOperatorSubtaskState;
     }
 
+    @Override
+    public Optional<OperatorSubtaskState> getSubtaskJobManagerRestoredState(OperatorID operatorID) {
+        throw new UnsupportedOperationException(
+                "Unsupported method for SavepointTaskStateManager.");
+    }
+
     @Nonnull
     @Override
     public LocalRecoveryConfig createLocalRecoveryConfig() {
-        return new LocalRecoveryConfig(null);
+        return LocalRecoveryConfig.BACKUP_AND_RECOVERY_DISABLED;
     }
 
     @Override

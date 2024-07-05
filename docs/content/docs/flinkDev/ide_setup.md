@@ -145,10 +145,11 @@ It is recommended to automatically format your code by applying the following se
 4. Go to "Settings" → Editor → Code Style → Scala.
 5. Change the "Formatter" to "scalafmt".
 6. Go to "Settings" → "Tools" → "Actions on Save".
-7. Under "Formatting Actions", select "Optimize imports" and "Reformat file".
+7. Under "Formatting Actions", select "Optimize imports" and "Reformat code".
 8. From the "All file types list" next to "Reformat code", select Java and Scala.
 
 For earlier IntelliJ IDEA versions:
+
 6. Go to "Settings" → "Other Settings" → "Save Actions".
 7. Under "General", enable your preferred settings for when to format the code, e.g. "Activate save actions on save".
 8. Under "Formatting Actions", select "Optimize imports" and "Reformat file".
@@ -168,7 +169,7 @@ any of these modules.
 
 1. Go to "Settings" → "Tools" → "Checkstyle".
 2. Set "Scan Scope" to "Only Java sources (including tests)".
-3. For "Checkstyle Version" select "8.14".
+3. For "Checkstyle Version" select "9.3".
 4. Under "Configuration File" click the "+" icon to add a new configuration.
 5. Set "Description" to "Flink".
 6. Select "Use a local Checkstyle file" and point it to `tools/maven/checkstyle.xml` located within

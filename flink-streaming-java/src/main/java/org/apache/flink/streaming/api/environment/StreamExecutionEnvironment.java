@@ -66,6 +66,7 @@ import org.apache.flink.configuration.StateChangelogOptions;
 import org.apache.flink.connector.datagen.functions.FromElementsGeneratorFunction;
 import org.apache.flink.connector.datagen.source.DataGeneratorSource;
 import org.apache.flink.core.execution.CacheSupportedPipelineExecutor;
+import org.apache.flink.core.execution.CheckpointingMode;
 import org.apache.flink.core.execution.DefaultExecutorServiceLoader;
 import org.apache.flink.core.execution.DetachedJobExecutionResult;
 import org.apache.flink.core.execution.JobClient;
@@ -78,7 +79,6 @@ import org.apache.flink.runtime.clusterframework.types.ResourceProfile;
 import org.apache.flink.runtime.scheduler.ClusterDatasetCorruptedException;
 import org.apache.flink.runtime.state.KeyGroupRangeAssignment;
 import org.apache.flink.runtime.state.StateBackend;
-import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
@@ -518,9 +518,7 @@ public class StreamExecutionEnvironment implements AutoCloseable {
      * the configured state backend.
      *
      * <p>NOTE: Checkpointing iterative streaming dataflows is not properly supported at the moment.
-     * For that reason, iterative jobs will not be started if used with enabled checkpointing. To
-     * override this mechanism, use the {@link #enableCheckpointing(long, CheckpointingMode,
-     * boolean)} method.
+     * For that reason, iterative jobs will not be started if used with enabled checkpointing.
      *
      * @param interval Time interval between state checkpoints in milliseconds.
      */
@@ -535,20 +533,43 @@ public class StreamExecutionEnvironment implements AutoCloseable {
      * restarted from the latest completed checkpoint.
      *
      * <p>The job draws checkpoints periodically, in the given interval. The system uses the given
+     * {@link org.apache.flink.streaming.api.CheckpointingMode} for the checkpointing ("exactly
+     * once" vs "at least once"). The state will be stored in the configured state backend.
+     *
+     * <p>NOTE: Checkpointing iterative streaming dataflows is not properly supported at the moment.
+     * For that reason, iterative jobs will not be started if used with enabled checkpointing.
+     *
+     * @param interval Time interval between state checkpoints in milliseconds.
+     * @param mode The checkpointing mode, selecting between "exactly once" and "at least once"
+     *     guaranteed.
+     * @deprecated use {@link #enableCheckpointing(long, CheckpointingMode)} instead.
+     */
+    @Deprecated
+    public StreamExecutionEnvironment enableCheckpointing(
+            long interval, org.apache.flink.streaming.api.CheckpointingMode mode) {
+        checkpointCfg.setCheckpointingMode(mode);
+        checkpointCfg.setCheckpointInterval(interval);
+        return this;
+    }
+
+    /**
+     * Enables checkpointing for the streaming job. The distributed state of the streaming dataflow
+     * will be periodically snapshotted. In case of a failure, the streaming dataflow will be
+     * restarted from the latest completed checkpoint.
+     *
+     * <p>The job draws checkpoints periodically, in the given interval. The system uses the given
      * {@link CheckpointingMode} for the checkpointing ("exactly once" vs "at least once"). The
      * state will be stored in the configured state backend.
      *
      * <p>NOTE: Checkpointing iterative streaming dataflows is not properly supported at the moment.
-     * For that reason, iterative jobs will not be started if used with enabled checkpointing. To
-     * override this mechanism, use the {@link #enableCheckpointing(long, CheckpointingMode,
-     * boolean)} method.
+     * For that reason, iterative jobs will not be started if used with enabled checkpointing.
      *
      * @param interval Time interval between state checkpoints in milliseconds.
      * @param mode The checkpointing mode, selecting between "exactly once" and "at least once"
      *     guaranteed.
      */
     public StreamExecutionEnvironment enableCheckpointing(long interval, CheckpointingMode mode) {
-        checkpointCfg.setCheckpointingMode(mode);
+        checkpointCfg.setCheckpointingConsistencyMode(mode);
         checkpointCfg.setCheckpointInterval(interval);
         return this;
     }
@@ -575,7 +596,7 @@ public class StreamExecutionEnvironment implements AutoCloseable {
     @SuppressWarnings("deprecation")
     @PublicEvolving
     public StreamExecutionEnvironment enableCheckpointing(
-            long interval, CheckpointingMode mode, boolean force) {
+            long interval, org.apache.flink.streaming.api.CheckpointingMode mode, boolean force) {
         checkpointCfg.setCheckpointingMode(mode);
         checkpointCfg.setCheckpointInterval(interval);
         checkpointCfg.setForceCheckpointing(force);
@@ -592,9 +613,7 @@ public class StreamExecutionEnvironment implements AutoCloseable {
      * in the configured state backend.
      *
      * <p>NOTE: Checkpointing iterative streaming dataflows is not properly supported at the moment.
-     * For that reason, iterative jobs will not be started if used with enabled checkpointing. To
-     * override this mechanism, use the {@link #enableCheckpointing(long, CheckpointingMode,
-     * boolean)} method.
+     * For that reason, iterative jobs will not be started if used with enabled checkpointing.
      *
      * @deprecated Use {@link #enableCheckpointing(long)} instead.
      */
@@ -646,9 +665,22 @@ public class StreamExecutionEnvironment implements AutoCloseable {
      * <p>Shorthand for {@code getCheckpointConfig().getCheckpointingMode()}.
      *
      * @return The checkpoint mode
+     * @deprecated Use {@link #getCheckpointingConsistencyMode()} instead.
      */
-    public CheckpointingMode getCheckpointingMode() {
+    @Deprecated
+    public org.apache.flink.streaming.api.CheckpointingMode getCheckpointingMode() {
         return checkpointCfg.getCheckpointingMode();
+    }
+
+    /**
+     * Returns the checkpointing consistency mode (exactly-once vs. at-least-once).
+     *
+     * <p>Shorthand for {@code getCheckpointConfig().getCheckpointingConsistencyMode()}.
+     *
+     * @return The checkpoint mode
+     */
+    public CheckpointingMode getCheckpointingConsistencyMode() {
+        return checkpointCfg.getCheckpointingConsistencyMode();
     }
 
     /**
@@ -900,10 +932,21 @@ public class StreamExecutionEnvironment implements AutoCloseable {
      *
      * @param type The class of the types serialized with the given serializer.
      * @param serializer The serializer to use.
+     * @deprecated Register data types and serializers through hard codes is deprecated, because you
+     *     need to modify the codes when upgrading job version. Instance-type serializer definition
+     *     where serializers are serialized and written into the snapshot and deserialized for use
+     *     is deprecated as well. Use class-type serializer definition by {@link
+     *     PipelineOptions#SERIALIZATION_CONFIG} instead, where only the class name is written into
+     *     the snapshot and new instance of the serializer is created for use. This is a breaking
+     *     change, and it will be removed in Flink 2.0.
+     * @see <a
+     *     href="https://cwiki.apache.org/confluence/display/FLINK/FLIP-398:+Improve+Serialization+Configuration+And+Usage+In+Flink">
+     *     FLIP-398: Improve Serialization Configuration And Usage In Flink</a>
      */
+    @Deprecated
     public <T extends Serializer<?> & Serializable> void addDefaultKryoSerializer(
             Class<?> type, T serializer) {
-        config.addDefaultKryoSerializer(type, serializer);
+        config.getSerializerConfig().addDefaultKryoSerializer(type, serializer);
     }
 
     /**
@@ -911,10 +954,17 @@ public class StreamExecutionEnvironment implements AutoCloseable {
      *
      * @param type The class of the types serialized with the given serializer.
      * @param serializerClass The class of the serializer to use.
+     * @deprecated Register data types and serializers through hard codes is deprecated, because you
+     *     need to modify the codes when upgrading job version. You should configure this by config
+     *     option {@link PipelineOptions#SERIALIZATION_CONFIG}.
+     * @see <a
+     *     href="https://cwiki.apache.org/confluence/display/FLINK/FLIP-398:+Improve+Serialization+Configuration+And+Usage+In+Flink">
+     *     FLIP-398: Improve Serialization Configuration And Usage In Flink</a>
      */
+    @Deprecated
     public void addDefaultKryoSerializer(
             Class<?> type, Class<? extends Serializer<?>> serializerClass) {
-        config.addDefaultKryoSerializer(type, serializerClass);
+        config.getSerializerConfig().addDefaultKryoSerializer(type, serializerClass);
     }
 
     /**
@@ -926,10 +976,21 @@ public class StreamExecutionEnvironment implements AutoCloseable {
      *
      * @param type The class of the types serialized with the given serializer.
      * @param serializer The serializer to use.
+     * @deprecated Register data types and serializers through hard codes is deprecated, because you
+     *     need to modify the codes when upgrading job version. Instance-type serializer definition
+     *     where serializers are serialized and written into the snapshot and deserialized for use
+     *     is deprecated as well. Use class-type serializer definition by {@link
+     *     PipelineOptions#SERIALIZATION_CONFIG} instead, where only the class name is written into
+     *     the snapshot and new instance of the serializer is created for use. This is a breaking
+     *     change, and it will be removed in Flink 2.0.
+     * @see <a
+     *     href="https://cwiki.apache.org/confluence/display/FLINK/FLIP-398:+Improve+Serialization+Configuration+And+Usage+In+Flink">
+     *     FLIP-398: Improve Serialization Configuration And Usage In Flink</a>
      */
+    @Deprecated
     public <T extends Serializer<?> & Serializable> void registerTypeWithKryoSerializer(
             Class<?> type, T serializer) {
-        config.registerTypeWithKryoSerializer(type, serializer);
+        config.getSerializerConfig().registerTypeWithKryoSerializer(type, serializer);
     }
 
     /**
@@ -938,11 +999,18 @@ public class StreamExecutionEnvironment implements AutoCloseable {
      *
      * @param type The class of the types serialized with the given serializer.
      * @param serializerClass The class of the serializer to use.
+     * @deprecated Register data types and serializers through hard codes is deprecated, because you
+     *     need to modify the codes when upgrading job version. You should configure this by config
+     *     option {@link PipelineOptions#SERIALIZATION_CONFIG}.
+     * @see <a
+     *     href="https://cwiki.apache.org/confluence/display/FLINK/FLIP-398:+Improve+Serialization+Configuration+And+Usage+In+Flink">
+     *     FLIP-398: Improve Serialization Configuration And Usage In Flink</a>
      */
+    @Deprecated
     @SuppressWarnings("rawtypes")
     public void registerTypeWithKryoSerializer(
             Class<?> type, Class<? extends Serializer> serializerClass) {
-        config.registerTypeWithKryoSerializer(type, serializerClass);
+        config.getSerializerConfig().registerTypeWithKryoSerializer(type, serializerClass);
     }
 
     /**
@@ -952,7 +1020,14 @@ public class StreamExecutionEnvironment implements AutoCloseable {
      * written.
      *
      * @param type The class of the type to register.
+     * @deprecated Register data types and serializers through hard codes is deprecated, because you
+     *     need to modify the codes when upgrading job version. You should configure this by config
+     *     option {@link PipelineOptions#SERIALIZATION_CONFIG}.
+     * @see <a
+     *     href="https://cwiki.apache.org/confluence/display/FLINK/FLIP-398:+Improve+Serialization+Configuration+And+Usage+In+Flink">
+     *     FLIP-398: Improve Serialization Configuration And Usage In Flink</a>
      */
+    @Deprecated
     public void registerType(Class<?> type) {
         if (type == null) {
             throw new NullPointerException("Cannot register null type class.");
@@ -961,9 +1036,9 @@ public class StreamExecutionEnvironment implements AutoCloseable {
         TypeInformation<?> typeInfo = TypeExtractor.createTypeInfo(type);
 
         if (typeInfo instanceof PojoTypeInfo) {
-            config.registerPojoType(type);
+            config.getSerializerConfig().registerPojoType(type);
         } else {
-            config.registerKryoType(type);
+            config.getSerializerConfig().registerKryoType(type);
         }
     }
 
@@ -2278,7 +2353,7 @@ public class StreamExecutionEnvironment implements AutoCloseable {
         try {
             final JobExecutionResult jobExecutionResult;
 
-            if (configuration.getBoolean(DeploymentOptions.ATTACHED)) {
+            if (configuration.get(DeploymentOptions.ATTACHED)) {
                 jobExecutionResult = jobClient.getJobExecutionResult().get();
             } else {
                 jobExecutionResult = new DetachedJobExecutionResult(jobClient.getJobID());
@@ -2591,7 +2666,7 @@ public class StreamExecutionEnvironment implements AutoCloseable {
      * execution environment, as returned by {@link #createLocalEnvironment(Configuration)}.
      *
      * <p>When executed from the command line the given configuration is stacked on top of the
-     * global configuration which comes from the {@code flink-conf.yaml}, potentially overriding
+     * global configuration which comes from the {@code config.yaml}, potentially overriding
      * duplicated options.
      *
      * @param configuration The configuration to instantiate the environment with.
@@ -2679,7 +2754,7 @@ public class StreamExecutionEnvironment implements AutoCloseable {
 
         if (!conf.contains(RestOptions.PORT)) {
             // explicitly set this option so that it's not set to 0 later
-            conf.setInteger(RestOptions.PORT, RestOptions.PORT.defaultValue());
+            conf.set(RestOptions.PORT, RestOptions.PORT.defaultValue());
         }
 
         return createLocalEnvironment(conf);

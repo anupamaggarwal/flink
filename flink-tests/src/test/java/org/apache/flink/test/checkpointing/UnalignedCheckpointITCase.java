@@ -38,12 +38,10 @@ import org.apache.flink.streaming.api.datastream.DataStreamSink;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
-import org.apache.flink.testutils.junit.FailsWithAdaptiveScheduler;
 import org.apache.flink.util.Collector;
 
 import org.apache.commons.lang3.ArrayUtils;
 import org.junit.Test;
-import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
@@ -53,7 +51,7 @@ import java.util.Collections;
 import java.util.stream.Stream;
 
 import static org.apache.flink.api.common.eventtime.WatermarkStrategy.noWatermarks;
-import static org.apache.flink.shaded.guava32.com.google.common.collect.Iterables.getOnlyElement;
+import static org.apache.flink.shaded.guava31.com.google.common.collect.Iterables.getOnlyElement;
 import static org.apache.flink.test.checkpointing.UnalignedCheckpointTestBase.ChannelType.LOCAL;
 import static org.apache.flink.test.checkpointing.UnalignedCheckpointTestBase.ChannelType.MIXED;
 import static org.apache.flink.test.checkpointing.UnalignedCheckpointTestBase.ChannelType.REMOTE;
@@ -105,7 +103,6 @@ import static org.hamcrest.Matchers.equalTo;
  * </ul>
  */
 @RunWith(Parameterized.class)
-@Category(FailsWithAdaptiveScheduler.class) // FLINK-21689
 public class UnalignedCheckpointITCase extends UnalignedCheckpointTestBase {
     enum Topology implements DagCreator {
         PIPELINE {
@@ -314,7 +311,7 @@ public class UnalignedCheckpointITCase extends UnalignedCheckpointTestBase {
                 // shifts records from one partition to another evenly to retain order
                 .partitionCustom(new ShiftingPartitioner(), l -> l)
                 .map(
-                        new FailingMapper(
+                        new FailingMapper<>(
                                 state ->
                                         state.completedCheckpoints >= minCheckpoints / 4
                                                         && state.runNumber == 0

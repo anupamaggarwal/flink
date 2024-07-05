@@ -103,6 +103,7 @@ public interface ResourceManagerGateway
     /**
      * Sends the given {@link SlotReport} to the ResourceManager.
      *
+     * @param taskManagerResourceId The resource ID of the sending TaskManager
      * @param taskManagerRegistrationId id identifying the sending TaskManager
      * @param slotReport which is sent to the ResourceManager
      * @param timeout for the operation
@@ -225,24 +226,6 @@ public interface ResourceManagerGateway
      */
     CompletableFuture<TransientBlobKey> requestTaskManagerFileUploadByType(
             ResourceID taskManagerId, FileType fileType, @RpcTimeout Time timeout);
-
-    /**
-     * Request the file upload from the given {@link TaskExecutor} to the cluster's {@link
-     * BlobServer}. The corresponding {@link TransientBlobKey} is returned. To support different
-     * type file upload with name, using {@link
-     * ResourceManager#requestTaskManagerFileUploadByNameAndType} as instead.
-     *
-     * @param taskManagerId identifying the {@link TaskExecutor} to upload the specified file
-     * @param fileName name of the file to upload
-     * @param timeout for the asynchronous operation
-     * @return Future which is completed with the {@link TransientBlobKey} after uploading the file
-     *     to the {@link BlobServer}.
-     * @deprecated use {@link #requestTaskManagerFileUploadByNameAndType(ResourceID, String,
-     *     FileType, Duration)} as instead.
-     */
-    @Deprecated
-    CompletableFuture<TransientBlobKey> requestTaskManagerFileUploadByName(
-            ResourceID taskManagerId, String fileName, @RpcTimeout Time timeout);
 
     /**
      * Request the file upload from the given {@link TaskExecutor} to the cluster's {@link

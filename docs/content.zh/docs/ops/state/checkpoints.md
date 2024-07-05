@@ -63,7 +63,7 @@ new JobManagerCheckpointStorage(MAX_MEM_STATE_SIZE);
 `JobManagerCheckpointStorage` 的限制:
 
 - 默认情况下，每个 State 的大小限制为 5 MB。 可以在 `JobManagerCheckpointStorage` 的构造函数中修改大小。
-- 无论配置的最大 State 大小如何，状态都不能大于 Pekka 框架的大小（请参阅 [配置参数]({{< ref "docs/deployment/config" >}})）。
+- 无论配置的最大 State 大小如何，状态都不能大于 Pekko 框架的大小（请参阅 [配置参数]({{< ref "docs/deployment/config" >}})）。
 - 聚合后总的状态大小必须小于 JobManager 的内存上限。
 
 鼓励在以下场景使用 JobManagerCheckpointStorage：
@@ -91,16 +91,16 @@ Checkpoint 在默认的情况下仅用于恢复失败的作业，并不保留，
 
 ```java
 CheckpointConfig config = env.getCheckpointConfig();
-config.setExternalizedCheckpointCleanup(ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION);
+config.setExternalizedCheckpointRetention(ExternalizedCheckpointRetention.RETAIN_ON_CANCELLATION);
 ```
 
-`ExternalizedCheckpointCleanup` 配置项定义了当作业取消时，对作业 checkpoint 的操作：
-- **`ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION`**：当作业取消时，保留作业的 checkpoint。注意，这种情况下，需要手动清除该作业保留的 checkpoint。
-- **`ExternalizedCheckpointCleanup.DELETE_ON_CANCELLATION`**：当作业取消时，删除作业的 checkpoint。仅当作业失败时，作业的 checkpoint 才会被保留。
+`ExternalizedCheckpointRetention` 配置项定义了当作业取消时，对作业 checkpoint 的操作：
+- **`ExternalizedCheckpointRetention.RETAIN_ON_CANCELLATION`**：当作业取消时，保留作业的 checkpoint。注意，这种情况下，需要手动清除该作业保留的 checkpoint。
+- **`ExternalizedCheckpointRetention.DELETE_ON_CANCELLATION`**：当作业取消时，删除作业的 checkpoint。仅当作业失败时，作业的 checkpoint 才会被保留。
 
 ### 目录结构
 
-与 [savepoints]({{< ref "docs/ops/state/savepoints" >}}) 相似，checkpoint 由元数据文件、数据文件（与 state backend 相关）组成。可通过配置文件中 "state.checkpoints.dir" 配置项来指定元数据文件和数据文件的存储路径，另外也可以在代码中针对单个作业特别指定该配置项。
+与 [savepoints]({{< ref "docs/ops/state/savepoints" >}}) 相似，checkpoint 由元数据文件、数据文件（与 state backend 相关）组成。可通过配置文件中 "execution.checkpointing.dir" 配置项来指定元数据文件和数据文件的存储路径，另外也可以在代码中针对单个作业特别指定该配置项。
 
 当前的 checkpoint 目录结构（由 [FLINK-8531](https://issues.apache.org/jira/browse/FLINK-8531) 引入）如下所示:
 
@@ -125,7 +125,7 @@ config.setExternalizedCheckpointCleanup(ExternalizedCheckpointCleanup.RETAIN_ON_
 #### 通过配置文件全局配置
 
 ```yaml
-state.checkpoints.dir: hdfs:///checkpoints/
+execution.checkpointing.dir: hdfs:///checkpoints/
 ```
 
 #### 创建 state backend 对单个作业进行配置

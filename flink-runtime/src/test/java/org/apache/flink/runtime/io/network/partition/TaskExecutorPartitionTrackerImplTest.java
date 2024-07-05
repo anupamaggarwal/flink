@@ -32,7 +32,7 @@ import org.apache.flink.runtime.shuffle.ShuffleEnvironment;
 import org.apache.flink.runtime.shuffle.ShuffleIOOwnerContext;
 import org.apache.flink.runtime.taskexecutor.partition.ClusterPartitionReport;
 
-import org.apache.flink.shaded.guava32.com.google.common.collect.Iterables;
+import org.apache.flink.shaded.guava31.com.google.common.collect.Iterables;
 
 import org.junit.jupiter.api.Test;
 
@@ -151,6 +151,29 @@ class TaskExecutorPartitionTrackerImplTest {
                 .eventuallySucceeds()
                 .asList()
                 .contains(resultPartitionId1);
+    }
+
+    @Test
+    void testGetTrackedPartitionsFor() {
+        final TestingShuffleEnvironment testingShuffleEnvironment = new TestingShuffleEnvironment();
+
+        final JobID jobId = new JobID();
+        final ResultPartitionID resultPartitionId = new ResultPartitionID();
+
+        final TaskExecutorPartitionTracker partitionTracker =
+                new TaskExecutorPartitionTrackerImpl(testingShuffleEnvironment);
+        TaskExecutorPartitionInfo partitionInfo =
+                new TaskExecutorPartitionInfo(
+                        new TestingShuffleDescriptor(resultPartitionId),
+                        new IntermediateDataSetID(),
+                        1);
+
+        partitionTracker.startTrackingPartition(jobId, partitionInfo);
+        Collection<TaskExecutorPartitionInfo> partitions =
+                partitionTracker.getTrackedPartitionsFor(jobId);
+
+        assertThat(partitions).hasSize(1);
+        assertThat(partitions.iterator().next()).isEqualTo(partitionInfo);
     }
 
     @Test

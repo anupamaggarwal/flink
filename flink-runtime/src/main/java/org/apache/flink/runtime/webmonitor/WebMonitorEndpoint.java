@@ -21,10 +21,10 @@ package org.apache.flink.runtime.webmonitor;
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.common.time.Time;
 import org.apache.flink.api.java.tuple.Tuple2;
-import org.apache.flink.configuration.AkkaOptions;
 import org.apache.flink.configuration.CheckpointingOptions;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.RestOptions;
+import org.apache.flink.configuration.RpcOptions;
 import org.apache.flink.runtime.blob.TransientBlobService;
 import org.apache.flink.runtime.checkpoint.CheckpointStatsSnapshot;
 import org.apache.flink.runtime.leaderelection.LeaderContender;
@@ -85,6 +85,7 @@ import org.apache.flink.runtime.rest.handler.job.metrics.AggregatingJobsMetricsH
 import org.apache.flink.runtime.rest.handler.job.metrics.AggregatingSubtasksMetricsHandler;
 import org.apache.flink.runtime.rest.handler.job.metrics.AggregatingTaskManagersMetricsHandler;
 import org.apache.flink.runtime.rest.handler.job.metrics.JobManagerMetricsHandler;
+import org.apache.flink.runtime.rest.handler.job.metrics.JobManagerOperatorMetricsHandler;
 import org.apache.flink.runtime.rest.handler.job.metrics.JobMetricsHandler;
 import org.apache.flink.runtime.rest.handler.job.metrics.JobVertexMetricsHandler;
 import org.apache.flink.runtime.rest.handler.job.metrics.JobVertexWatermarksHandler;
@@ -177,8 +178,8 @@ import org.apache.flink.util.Preconditions;
 import org.apache.flink.util.concurrent.ExecutorThreadFactory;
 import org.apache.flink.util.concurrent.FutureUtils;
 
-import org.apache.flink.shaded.guava32.com.google.common.cache.Cache;
-import org.apache.flink.shaded.guava32.com.google.common.cache.CacheBuilder;
+import org.apache.flink.shaded.guava31.com.google.common.cache.Cache;
+import org.apache.flink.shaded.guava31.com.google.common.cache.CacheBuilder;
 import org.apache.flink.shaded.netty4.io.netty.channel.ChannelInboundHandler;
 
 import javax.annotation.Nullable;
@@ -267,7 +268,7 @@ public class WebMonitorEndpoint<T extends RestfulGateway> extends RestServerEndp
     }
 
     private VertexThreadInfoTracker initializeThreadInfoTracker(ScheduledExecutorService executor) {
-        final Duration askTimeout = clusterConfiguration.get(AkkaOptions.ASK_TIMEOUT_DURATION);
+        final Duration askTimeout = clusterConfiguration.get(RpcOptions.ASK_TIMEOUT_DURATION);
 
         final Duration flameGraphCleanUpInterval =
                 clusterConfiguration.get(RestOptions.FLAMEGRAPH_CLEANUP_INTERVAL);
@@ -278,12 +279,12 @@ public class WebMonitorEndpoint<T extends RestfulGateway> extends RestServerEndp
                         resourceManagerRetriever, executor, restConfiguration.getTimeout())
                 .setCoordinator(threadInfoRequestCoordinator)
                 .setCleanUpInterval(flameGraphCleanUpInterval)
-                .setNumSamples(clusterConfiguration.getInteger(RestOptions.FLAMEGRAPH_NUM_SAMPLES))
+                .setNumSamples(clusterConfiguration.get(RestOptions.FLAMEGRAPH_NUM_SAMPLES))
                 .setStatsRefreshInterval(
                         clusterConfiguration.get(RestOptions.FLAMEGRAPH_REFRESH_INTERVAL))
                 .setDelayBetweenSamples(clusterConfiguration.get(RestOptions.FLAMEGRAPH_DELAY))
                 .setMaxThreadInfoDepth(
-                        clusterConfiguration.getInteger(RestOptions.FLAMEGRAPH_STACK_TRACE_DEPTH))
+                        clusterConfiguration.get(RestOptions.FLAMEGRAPH_STACK_TRACE_DEPTH))
                 .build();
     }
 
@@ -522,6 +523,10 @@ public class WebMonitorEndpoint<T extends RestfulGateway> extends RestServerEndp
                 new TaskManagerMetricsHandler(
                         leaderRetriever, timeout, responseHeaders, metricFetcher);
 
+        final JobManagerOperatorMetricsHandler jobManagerOperatorMetricsHandler =
+                new JobManagerOperatorMetricsHandler(
+                        leaderRetriever, timeout, responseHeaders, metricFetcher);
+
         final JobManagerMetricsHandler jobManagerMetricsHandler =
                 new JobManagerMetricsHandler(
                         leaderRetriever, timeout, responseHeaders, metricFetcher);
@@ -552,7 +557,7 @@ public class WebMonitorEndpoint<T extends RestfulGateway> extends RestServerEndp
                 new JobExecutionResultHandler(leaderRetriever, timeout, responseHeaders);
 
         final String defaultSavepointDir =
-                clusterConfiguration.getString(CheckpointingOptions.SAVEPOINT_DIRECTORY);
+                clusterConfiguration.get(CheckpointingOptions.SAVEPOINT_DIRECTORY);
 
         final SavepointHandlers savepointHandlers = new SavepointHandlers(defaultSavepointDir);
 
@@ -794,6 +799,10 @@ public class WebMonitorEndpoint<T extends RestfulGateway> extends RestServerEndp
                         taskManagerMetricsHandler.getMessageHeaders(), taskManagerMetricsHandler));
         handlers.add(
                 Tuple2.of(jobManagerMetricsHandler.getMessageHeaders(), jobManagerMetricsHandler));
+        handlers.add(
+                Tuple2.of(
+                        jobManagerOperatorMetricsHandler.getMessageHeaders(),
+                        jobManagerOperatorMetricsHandler));
         handlers.add(
                 Tuple2.of(
                         aggregatingTaskManagersMetricsHandler.getMessageHeaders(),

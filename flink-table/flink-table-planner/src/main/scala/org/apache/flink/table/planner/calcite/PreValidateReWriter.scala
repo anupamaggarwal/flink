@@ -234,13 +234,20 @@ object PreValidateReWriter {
 
     call.getKind match {
       case SqlKind.SELECT =>
-        rewriteSelect(
-          validator,
-          call.asInstanceOf[SqlSelect],
-          targetRowType,
-          assignedFields,
-          targetPosition)
+        val sqlSelect = call.asInstanceOf[SqlSelect]
+
+        if (targetPosition.nonEmpty && sqlSelect.getSelectList.size() != targetPosition.size()) {
+          throw newValidationError(call, RESOURCE.columnCountMismatch())
+        }
+        rewriteSelect(validator, sqlSelect, targetRowType, assignedFields, targetPosition)
       case SqlKind.VALUES =>
+        call.getOperandList.toSeq.foreach {
+          case sqlCall: SqlCall => {
+            if (targetPosition.nonEmpty && sqlCall.getOperandList.size() != targetPosition.size()) {
+              throw newValidationError(call, RESOURCE.columnCountMismatch())
+            }
+          }
+        }
         rewriteValues(call, targetRowType, assignedFields, targetPosition)
       case kind if SqlKind.SET_QUERY.contains(kind) =>
         call.getOperandList.zipWithIndex.foreach {

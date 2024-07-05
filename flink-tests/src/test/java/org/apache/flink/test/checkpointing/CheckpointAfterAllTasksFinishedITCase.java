@@ -38,7 +38,7 @@ import org.apache.flink.streaming.api.graph.StreamGraph;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
-import org.apache.flink.test.util.AbstractTestBase;
+import org.apache.flink.test.util.AbstractTestBaseJUnit4;
 import org.apache.flink.testutils.junit.SharedObjectsExtension;
 import org.apache.flink.testutils.junit.SharedReference;
 
@@ -57,7 +57,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Tests an immediate checkpoint should be triggered right after all tasks reached the end of data.
  */
-public class CheckpointAfterAllTasksFinishedITCase extends AbstractTestBase {
+public class CheckpointAfterAllTasksFinishedITCase extends AbstractTestBaseJUnit4 {
     private static final int SMALL_SOURCE_NUM_RECORDS = 20;
     private static final int BIG_SOURCE_NUM_RECORDS = 100;
 
@@ -154,7 +154,7 @@ public class CheckpointAfterAllTasksFinishedITCase extends AbstractTestBase {
     @Test
     public void testFailoverAfterSomeTasksFinished() throws Exception {
         final Configuration config = new Configuration();
-        config.setString(JobManagerOptions.EXECUTION_FAILOVER_STRATEGY, "full");
+        config.set(JobManagerOptions.EXECUTION_FAILOVER_STRATEGY, "full");
 
         final MiniClusterConfiguration cfg =
                 new MiniClusterConfiguration.Builder()

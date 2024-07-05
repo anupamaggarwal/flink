@@ -28,6 +28,7 @@ import javax.annotation.Nonnull;
 import java.io.File;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -54,12 +55,11 @@ public class ConfigurationUtils {
      */
     public static Optional<Time> getSystemResourceMetricsProbingInterval(
             Configuration configuration) {
-        if (!configuration.getBoolean(SYSTEM_RESOURCE_METRICS)) {
+        if (!configuration.get(SYSTEM_RESOURCE_METRICS)) {
             return Optional.empty();
         } else {
             return Optional.of(
-                    Time.milliseconds(
-                            configuration.getLong(SYSTEM_RESOURCE_METRICS_PROBING_INTERVAL)));
+                    Time.fromDuration(configuration.get(SYSTEM_RESOURCE_METRICS_PROBING_INTERVAL)));
         }
     }
 
@@ -72,7 +72,7 @@ public class ConfigurationUtils {
      */
     @Nonnull
     public static String[] parseTempDirectories(Configuration configuration) {
-        return splitPaths(configuration.getString(CoreOptions.TMP_DIRS));
+        return splitPaths(configuration.get(CoreOptions.TMP_DIRS));
     }
 
     /**
@@ -106,7 +106,7 @@ public class ConfigurationUtils {
     @Nonnull
     public static String[] parseLocalStateDirectories(Configuration configuration) {
         String configValue =
-                configuration.getString(
+                configuration.get(
                         CheckpointingOptions.LOCAL_RECOVERY_TASK_MANAGER_STATE_ROOT_DIRS, "");
         return splitPaths(configValue);
     }
@@ -140,15 +140,13 @@ public class ConfigurationUtils {
 
     public static Time getStandaloneClusterStartupPeriodTime(Configuration configuration) {
         final Time timeout;
-        long standaloneClusterStartupPeriodTime =
-                configuration.getLong(
-                        ResourceManagerOptions.STANDALONE_CLUSTER_STARTUP_PERIOD_TIME);
-        if (standaloneClusterStartupPeriodTime >= 0) {
-            timeout = Time.milliseconds(standaloneClusterStartupPeriodTime);
+        Duration standaloneClusterStartupPeriodTime =
+                configuration.get(ResourceManagerOptions.STANDALONE_CLUSTER_STARTUP_PERIOD_TIME);
+        if (standaloneClusterStartupPeriodTime != null
+                && !standaloneClusterStartupPeriodTime.isNegative()) {
+            timeout = Time.fromDuration(standaloneClusterStartupPeriodTime);
         } else {
-            timeout =
-                    Time.milliseconds(
-                            configuration.getLong(JobManagerOptions.SLOT_REQUEST_TIMEOUT));
+            timeout = Time.fromDuration(configuration.get(JobManagerOptions.SLOT_REQUEST_TIMEOUT));
         }
         return timeout;
     }
@@ -202,6 +200,62 @@ public class ConfigurationUtils {
         return separatedPaths.length() > 0
                 ? separatedPaths.split(",|" + File.pathSeparator)
                 : EMPTY;
+    }
+
+    /**
+     * Converts the provided configuration data into a format suitable for writing to a file, based
+     * on the {@code flattenYaml} flag and the {@code standardYaml} attribute of the configuration
+     * object.
+     *
+     * <p>Only when {@code flattenYaml} is set to {@code false} and the configuration object is
+     * standard yaml, a nested YAML format is used. Otherwise, a flat key-value pair format is
+     * output.
+     *
+     * <p>Each entry in the returned list represents a single line that can be written directly to a
+     * file.
+     *
+     * <p>Example input (flat map configuration data):
+     *
+     * <pre>{@code
+     * {
+     *      "parent.child": "value1",
+     *      "parent.child2": "value2"
+     * }
+     * }</pre>
+     *
+     * <p>Example output when {@code flattenYaml} is {@code false} and the configuration object is
+     * standard yaml:
+     *
+     * <pre>{@code
+     * parent:
+     *   child: value1
+     *   child2: value2
+     * }</pre>
+     *
+     * <p>Otherwise, the Example output is:
+     *
+     * <pre>{@code
+     * parent.child: value1
+     * parent.child2: value2
+     * }</pre>
+     *
+     * @param configuration The configuration to be converted.
+     * @param flattenYaml A boolean flag indicating if the configuration data should be output in a
+     *     flattened format.
+     * @return A list of strings, where each string represents a line of the file-writable data in
+     *     the chosen format.
+     */
+    public static List<String> convertConfigToWritableLines(
+            Configuration configuration, boolean flattenYaml) {
+        if (configuration.standardYaml && !flattenYaml) {
+            return YamlParserUtils.convertAndDumpYamlFromFlatMap(
+                    Collections.unmodifiableMap(configuration.confData));
+        } else {
+            Map<String, String> fileWritableMap = configuration.toFileWritableMap();
+            return fileWritableMap.entrySet().stream()
+                    .map(entry -> entry.getKey() + ": " + entry.getValue())
+                    .collect(Collectors.toList());
+        }
     }
 
     /**

@@ -44,6 +44,9 @@ public class MetricNames {
     public static final String IO_CURRENT_INPUT_WATERMARK_PATERN = "currentInput%dWatermark";
     public static final String IO_CURRENT_OUTPUT_WATERMARK = "currentOutputWatermark";
 
+    public static final String NUM_FIRED_TIMERS = "numFiredTimers";
+    public static final String NUM_FIRED_TIMERS_RATE = "numFiredTimers" + SUFFIX_RATE;
+
     public static final String NUM_RUNNING_JOBS = "numRunningJobs";
     public static final String TASK_SLOTS_AVAILABLE = "taskSlotsAvailable";
     public static final String TASK_SLOTS_TOTAL = "taskSlotsTotal";
@@ -69,7 +72,10 @@ public class MetricNames {
     public static final String INITIALIZE_STATE_DURATION = "InitializeStateDurationMs";
     public static final String GATE_RESTORE_DURATION = "GateRestoreDurationMs";
     public static final String DOWNLOAD_STATE_DURATION = "DownloadStateDurationMs";
+    public static final String RESTORE_STATE_DURATION = "RestoreStateDurationMs";
     public static final String RESTORED_STATE_SIZE = "RestoredStateSizeBytes";
+    public static final String RESTORE_ASYNC_COMPACTION_DURATION =
+            "RestoreAsyncCompactionDurationMs";
 
     public static final String START_WORKER_FAILURE_RATE = "startWorkFailure" + SUFFIX_RATE;
 

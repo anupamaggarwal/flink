@@ -18,6 +18,7 @@
 
 package org.apache.flink.runtime.io.network.netty;
 
+import org.apache.flink.configuration.NettyShuffleEnvironmentOptions.CompressionCodec;
 import org.apache.flink.core.memory.MemorySegment;
 import org.apache.flink.core.memory.MemorySegmentFactory;
 import org.apache.flink.runtime.io.network.TestingPartitionRequestClient;
@@ -27,6 +28,7 @@ import org.apache.flink.runtime.io.network.buffer.BufferDecompressor;
 import org.apache.flink.runtime.io.network.buffer.FreeingBufferRecycler;
 import org.apache.flink.runtime.io.network.buffer.NetworkBuffer;
 import org.apache.flink.runtime.io.network.buffer.NetworkBufferPool;
+import org.apache.flink.runtime.io.network.buffer.TestingBufferPool;
 import org.apache.flink.runtime.io.network.partition.consumer.InputChannelID;
 import org.apache.flink.runtime.io.network.partition.consumer.RemoteInputChannel;
 import org.apache.flink.runtime.io.network.partition.consumer.SingleInputGate;
@@ -79,11 +81,16 @@ class NettyMessageClientSideSerializationTest {
     void setup() throws IOException, InterruptedException {
         networkBufferPool = new NetworkBufferPool(8, BUFFER_SIZE);
         inputGate = createSingleInputGate(1, networkBufferPool);
+        inputGate.setBufferPool(
+                TestingBufferPool.builder()
+                        .setRequestMemorySegmentSupplier(
+                                () -> MemorySegmentFactory.allocateUnpooledSegment(1024))
+                        .build());
         RemoteInputChannel inputChannel =
                 createRemoteInputChannel(inputGate, new TestingPartitionRequestClient());
         inputChannel.requestSubpartitions();
         inputGate.setInputChannels(inputChannel);
-        inputGate.setup();
+        inputGate.setupChannels();
 
         CreditBasedPartitionRequestClientHandler handler =
                 new CreditBasedPartitionRequestClientHandler();
@@ -143,8 +150,9 @@ class NettyMessageClientSideSerializationTest {
     @ParameterizedTest
     @ValueSource(strings = {"LZ4", "LZO", "ZSTD"})
     void testCompressedBufferResponse(final String codecFactoryName) {
-        compressor = new BufferCompressor(BUFFER_SIZE, codecFactoryName);
-        decompressor = new BufferDecompressor(BUFFER_SIZE, codecFactoryName);
+        compressor = new BufferCompressor(BUFFER_SIZE, CompressionCodec.valueOf(codecFactoryName));
+        decompressor =
+                new BufferDecompressor(BUFFER_SIZE, CompressionCodec.valueOf(codecFactoryName));
         testBufferResponse(false, true);
     }
 

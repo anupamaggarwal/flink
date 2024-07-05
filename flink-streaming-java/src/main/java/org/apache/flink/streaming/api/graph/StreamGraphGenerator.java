@@ -28,6 +28,7 @@ import org.apache.flink.api.connector.source.Boundedness;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.configuration.BatchExecutionOptions;
+import org.apache.flink.configuration.CheckpointingOptions;
 import org.apache.flink.configuration.ClusterOptions;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.ExecutionOptions;
@@ -45,7 +46,6 @@ import org.apache.flink.runtime.state.KeyGroupRangeAssignment;
 import org.apache.flink.runtime.state.StateBackend;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.environment.CheckpointConfig;
-import org.apache.flink.streaming.api.environment.ExecutionCheckpointingOptions;
 import org.apache.flink.streaming.api.operators.sorted.state.BatchExecutionCheckpointStorage;
 import org.apache.flink.streaming.api.operators.sorted.state.BatchExecutionInternalTimeServiceManager;
 import org.apache.flink.streaming.api.operators.sorted.state.BatchExecutionStateBackend;
@@ -65,6 +65,7 @@ import org.apache.flink.streaming.api.transformations.ReduceTransformation;
 import org.apache.flink.streaming.api.transformations.SideOutputTransformation;
 import org.apache.flink.streaming.api.transformations.SinkTransformation;
 import org.apache.flink.streaming.api.transformations.SourceTransformation;
+import org.apache.flink.streaming.api.transformations.SourceTransformationWrapper;
 import org.apache.flink.streaming.api.transformations.TimestampsAndWatermarksTransformation;
 import org.apache.flink.streaming.api.transformations.TwoInputTransformation;
 import org.apache.flink.streaming.api.transformations.UnionTransformation;
@@ -328,8 +329,7 @@ public class StreamGraphGenerator {
         graph.setAutoParallelismEnabled(
                 configuration.get(BatchExecutionOptions.ADAPTIVE_AUTO_PARALLELISM_ENABLED));
         graph.setEnableCheckpointsAfterTasksFinish(
-                configuration.get(
-                        ExecutionCheckpointingOptions.ENABLE_CHECKPOINTS_AFTER_TASKS_FINISH));
+                configuration.get(CheckpointingOptions.ENABLE_CHECKPOINTS_AFTER_TASKS_FINISH));
         setDynamic(graph);
 
         if (shouldExecuteInBatchMode) {
@@ -553,6 +553,8 @@ public class StreamGraphGenerator {
             transformedIds = transformFeedback((FeedbackTransformation<?>) transform);
         } else if (transform instanceof CoFeedbackTransformation<?>) {
             transformedIds = transformCoFeedback((CoFeedbackTransformation<?>) transform);
+        } else if (transform instanceof SourceTransformationWrapper<?>) {
+            transformedIds = transform(((SourceTransformationWrapper<?>) transform).getInput());
         } else {
             throw new IllegalStateException("Unknown transformation: " + transform);
         }
@@ -665,10 +667,10 @@ public class StreamGraphGenerator {
                 itSource.getId(),
                 null,
                 null,
-                iterate.getOutputType().createSerializer(executionConfig));
+                iterate.getOutputType().createSerializer(executionConfig.getSerializerConfig()));
         streamGraph.setSerializers(
                 itSink.getId(),
-                iterate.getOutputType().createSerializer(executionConfig),
+                iterate.getOutputType().createSerializer(executionConfig.getSerializerConfig()),
                 null,
                 null);
 
@@ -750,10 +752,10 @@ public class StreamGraphGenerator {
                 itSource.getId(),
                 null,
                 null,
-                coIterate.getOutputType().createSerializer(executionConfig));
+                coIterate.getOutputType().createSerializer(executionConfig.getSerializerConfig()));
         streamGraph.setSerializers(
                 itSink.getId(),
-                coIterate.getOutputType().createSerializer(executionConfig),
+                coIterate.getOutputType().createSerializer(executionConfig.getSerializerConfig()),
                 null,
                 null);
 

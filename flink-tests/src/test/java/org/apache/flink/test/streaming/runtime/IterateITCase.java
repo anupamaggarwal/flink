@@ -26,7 +26,6 @@ import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.jobgraph.JobVertex;
 import org.apache.flink.runtime.jobgraph.tasks.CheckpointCoordinatorConfiguration;
-import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSink;
 import org.apache.flink.streaming.api.datastream.IterativeStream;
@@ -46,7 +45,7 @@ import org.apache.flink.streaming.runtime.partitioner.RebalancePartitioner;
 import org.apache.flink.streaming.runtime.partitioner.ShufflePartitioner;
 import org.apache.flink.test.streaming.runtime.util.NoOpIntMap;
 import org.apache.flink.test.streaming.runtime.util.ReceiveCheckNoOpSink;
-import org.apache.flink.test.util.AbstractTestBase;
+import org.apache.flink.test.util.AbstractTestBaseJUnit4;
 import org.apache.flink.util.Collector;
 import org.apache.flink.util.MathUtils;
 import org.apache.flink.util.OutputTag;
@@ -66,7 +65,7 @@ import static org.junit.Assert.fail;
 
 /** Tests for streaming iterations. */
 @SuppressWarnings({"unchecked", "unused", "serial"})
-public class IterateITCase extends AbstractTestBase {
+public class IterateITCase extends AbstractTestBaseJUnit4 {
 
     private static final Logger LOG = LoggerFactory.getLogger(IterateITCase.class);
 
@@ -659,7 +658,7 @@ public class IterateITCase extends AbstractTestBase {
                     createIteration(env, timeoutScale);
                     env.enableCheckpointing(
                             CheckpointCoordinatorConfiguration.MINIMAL_CHECKPOINT_TIME,
-                            CheckpointingMode.EXACTLY_ONCE,
+                            org.apache.flink.streaming.api.CheckpointingMode.EXACTLY_ONCE,
                             false);
                     env.execute();
 
@@ -672,7 +671,7 @@ public class IterateITCase extends AbstractTestBase {
                 createIteration(env, timeoutScale);
                 env.enableCheckpointing(
                         CheckpointCoordinatorConfiguration.MINIMAL_CHECKPOINT_TIME,
-                        CheckpointingMode.EXACTLY_ONCE,
+                        org.apache.flink.streaming.api.CheckpointingMode.EXACTLY_ONCE,
                         true);
                 env.getStreamGraph().getJobGraph();
 

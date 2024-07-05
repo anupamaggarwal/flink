@@ -27,7 +27,7 @@ import org.apache.flink.streaming.api.datastream.CustomSinkOperatorUidHashes;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.operators.ChainingStrategy;
 
-import org.apache.flink.shaded.guava32.com.google.common.collect.Lists;
+import org.apache.flink.shaded.guava31.com.google.common.collect.Lists;
 
 import javax.annotation.Nullable;
 
@@ -73,7 +73,7 @@ public class SinkTransformation<InputT, OutputT> extends PhysicalTransformation<
     }
 
     @Override
-    public List<Transformation<?>> getTransitivePredecessors() {
+    protected List<Transformation<?>> getTransitivePredecessorsInternal() {
         final List<Transformation<?>> result = Lists.newArrayList();
         result.add(this);
         result.addAll(input.getTransitivePredecessors());

@@ -33,7 +33,7 @@ import org.apache.flink.runtime.metrics.scope.ScopeFormat;
 import org.apache.flink.traces.reporter.TraceReporterFactory;
 import org.apache.flink.util.CollectionUtil;
 
-import org.apache.flink.shaded.guava32.com.google.common.collect.Iterators;
+import org.apache.flink.shaded.guava31.com.google.common.collect.Iterators;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -190,7 +190,7 @@ public final class ReporterSetup {
 
     public static List<ReporterSetup> fromConfiguration(
             final Configuration configuration, @Nullable final PluginManager pluginManager) {
-        String includedReportersString = configuration.getString(MetricOptions.REPORTERS_LIST, "");
+        String includedReportersString = configuration.get(MetricOptions.REPORTERS_LIST, "");
 
         Set<String> namedReporters =
                 findEnabledTraceReportersInConfiguration(

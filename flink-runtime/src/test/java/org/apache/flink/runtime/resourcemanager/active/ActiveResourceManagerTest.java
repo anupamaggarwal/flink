@@ -53,7 +53,7 @@ import org.apache.flink.runtime.taskexecutor.TestingTaskExecutorGatewayBuilder;
 import org.apache.flink.runtime.util.TestingFatalErrorHandler;
 import org.apache.flink.util.function.RunnableWithException;
 
-import org.apache.flink.shaded.guava32.com.google.common.collect.ImmutableSet;
+import org.apache.flink.shaded.guava31.com.google.common.collect.ImmutableSet;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -689,7 +689,7 @@ class ActiveResourceManagerTest {
     void testStartWorkerIntervalOnWorkerTerminationExceedFailureRate() throws Exception {
         new Context() {
             {
-                flinkConfig.setDouble(ResourceManagerOptions.START_WORKER_MAX_FAILURE_RATE, 1);
+                flinkConfig.set(ResourceManagerOptions.START_WORKER_MAX_FAILURE_RATE, 1d);
                 flinkConfig.set(
                         ResourceManagerOptions.START_WORKER_RETRY_INTERVAL,
                         Duration.ofMillis(TESTING_START_WORKER_INTERVAL.toMilliseconds()));
@@ -769,7 +769,7 @@ class ActiveResourceManagerTest {
     void testStartWorkerIntervalOnRequestWorkerFailure() throws Exception {
         new Context() {
             {
-                flinkConfig.setDouble(ResourceManagerOptions.START_WORKER_MAX_FAILURE_RATE, 1);
+                flinkConfig.set(ResourceManagerOptions.START_WORKER_MAX_FAILURE_RATE, 1d);
                 flinkConfig.set(
                         ResourceManagerOptions.START_WORKER_RETRY_INTERVAL,
                         Duration.ofMillis(TESTING_START_WORKER_INTERVAL.toMilliseconds()));

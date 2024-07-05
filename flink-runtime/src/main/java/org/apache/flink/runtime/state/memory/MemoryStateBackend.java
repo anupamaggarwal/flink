@@ -59,12 +59,12 @@ import static org.apache.flink.util.Preconditions.checkArgument;
  * 		env.getCheckpointConfig().setCheckpointStorage(new JobManagerCheckpointStorage());
  * }</pre>
  *
- * <p>If you are configuring your state backend via the {@code flink-conf.yaml} please make the
+ * <p>If you are configuring your state backend via the {@code config.yaml} please make the
  * following changes:
  *
  * <pre>{@code
  * state.backend.type: hashmap
- * state.checkpoint-storage: jobmanager
+ * execution.checkpointing.storage: jobmanager
  * }</pre>
  *
  * <p>This state backend holds the working state in the memory (JVM heap) of the TaskManagers. The

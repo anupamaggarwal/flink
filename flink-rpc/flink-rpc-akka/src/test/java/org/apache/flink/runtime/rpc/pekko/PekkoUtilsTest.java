@@ -17,8 +17,8 @@
 
 package org.apache.flink.runtime.rpc.pekko;
 
-import org.apache.flink.configuration.AkkaOptions;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.RpcOptions;
 import org.apache.flink.configuration.SecurityOptions;
 import org.apache.flink.runtime.rpc.AddressResolution;
 import org.apache.flink.runtime.rpc.RpcSystem;
@@ -225,7 +225,7 @@ class PekkoUtilsTest {
     @Test
     void getConfigDefaultsStartupTimeoutTo10TimesOfAskTimeout() {
         final Configuration configuration = new Configuration();
-        configuration.set(AkkaOptions.ASK_TIMEOUT_DURATION, Duration.ofMillis(100));
+        configuration.set(RpcOptions.ASK_TIMEOUT_DURATION, Duration.ofMillis(100));
 
         final Config config =
                 PekkoUtils.getConfig(configuration, new HostAndPort("localhost", 31337));
@@ -236,7 +236,7 @@ class PekkoUtilsTest {
     @Test
     void getConfigSslEngineProviderWithoutCertFingerprint() {
         final Configuration configuration = new Configuration();
-        configuration.setBoolean(SecurityOptions.SSL_INTERNAL_ENABLED, true);
+        configuration.set(SecurityOptions.SSL_INTERNAL_ENABLED, true);
 
         final Config config =
                 PekkoUtils.getConfig(configuration, new HostAndPort("localhost", 31337));
@@ -250,10 +250,10 @@ class PekkoUtilsTest {
     @Test
     void getConfigSslEngineProviderWithCertFingerprint() {
         final Configuration configuration = new Configuration();
-        configuration.setBoolean(SecurityOptions.SSL_INTERNAL_ENABLED, true);
+        configuration.set(SecurityOptions.SSL_INTERNAL_ENABLED, true);
 
         final String fingerprint = "A8:98:5D:3A:65:E5:E5:C4:B2:D7:D6:6D:40:C6:DD:2F:B1:9C:54:36";
-        configuration.setString(SecurityOptions.SSL_INTERNAL_CERT_FINGERPRINT, fingerprint);
+        configuration.set(SecurityOptions.SSL_INTERNAL_CERT_FINGERPRINT, fingerprint);
 
         final Config config =
                 PekkoUtils.getConfig(configuration, new HostAndPort("localhost", 31337));
@@ -262,5 +262,19 @@ class PekkoUtilsTest {
         assertThat(sslConfig.getString("ssl-engine-provider"))
                 .isEqualTo("org.apache.flink.runtime.rpc.pekko.CustomSSLEngineProvider");
         assertThat(sslConfig.getStringList("security.cert-fingerprints")).contains(fingerprint);
+    }
+
+    @Test
+    void getConfigCustomKeyOrTruststoreType() {
+        final Configuration configuration = new Configuration();
+        configuration.set(SecurityOptions.SSL_INTERNAL_ENABLED, true);
+        configuration.set(SecurityOptions.SSL_INTERNAL_KEYSTORE_TYPE, "JKS");
+        configuration.set(SecurityOptions.SSL_INTERNAL_TRUSTSTORE_TYPE, "JKS");
+
+        final Config config =
+                PekkoUtils.getConfig(configuration, new HostAndPort("localhost", 31337));
+        final Config securityConfig = config.getConfig("pekko.remote.classic.netty.ssl.security");
+        assertThat(securityConfig.getString("key-store-type")).isEqualTo("JKS");
+        assertThat(securityConfig.getString("trust-store-type")).isEqualTo("JKS");
     }
 }

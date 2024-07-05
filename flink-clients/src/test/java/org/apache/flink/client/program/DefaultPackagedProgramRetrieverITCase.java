@@ -45,6 +45,7 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -69,6 +70,10 @@ class DefaultPackagedProgramRetrieverITCase {
     @RegisterExtension
     ClasspathProviderExtension testJobEntryClassClasspathProvider =
             ClasspathProviderExtension.createWithTestJobOnly();
+
+    @RegisterExtension
+    ClasspathProviderExtension additionalArtifactClasspathProvider =
+            ClasspathProviderExtension.createWithAdditionalArtifact();
 
     @Test
     void testDeriveEntryClassInformationForCustomJar()
@@ -187,7 +192,7 @@ class DefaultPackagedProgramRetrieverITCase {
         final JobID jobId = new JobID();
 
         final Configuration configuration = new Configuration();
-        configuration.setInteger(CoreOptions.DEFAULT_PARALLELISM, parallelism);
+        configuration.set(CoreOptions.DEFAULT_PARALLELISM, parallelism);
         configuration.set(PipelineOptionsInternal.PIPELINE_FIXED_JOB_ID, jobId.toHexString());
 
         final String expectedSuffix = "suffix";
@@ -259,7 +264,7 @@ class DefaultPackagedProgramRetrieverITCase {
                 SavepointRestoreSettings.forPath("foobar", true);
         final JobID jobId = new JobID();
 
-        configuration.setString(PipelineOptionsInternal.PIPELINE_FIXED_JOB_ID, jobId.toHexString());
+        configuration.set(PipelineOptionsInternal.PIPELINE_FIXED_JOB_ID, jobId.toHexString());
         SavepointRestoreSettings.toConfiguration(savepointRestoreSettings, configuration);
 
         final String expectedSuffix = "suffix";
@@ -319,18 +324,33 @@ class DefaultPackagedProgramRetrieverITCase {
 
     @Test
     void testWithoutJobClassAndMultipleEntryClassesOnUserClasspath() {
+        // without a job class name specified deriving the entry class from classpath is impossible
+        // if the classpath contains multiple classes with main methods
+        final String errorMsg = "Multiple JAR archives with entry classes found on classpath.";
         assertThatThrownBy(
-                        () -> {
-                            // without a job class name specified deriving the entry class from
-                            // classpath is impossible
-                            // if the classpath contains multiple classes with main methods
-                            DefaultPackagedProgramRetriever.create(
-                                    multipleEntryClassesClasspathProvider.getDirectory(),
-                                    null,
-                                    new String[0],
-                                    new Configuration());
-                        })
-                .isInstanceOf(FlinkException.class);
+                        () ->
+                                DefaultPackagedProgramRetriever.create(
+                                        multipleEntryClassesClasspathProvider.getDirectory(),
+                                        null,
+                                        new String[0],
+                                        new Configuration()))
+                .isInstanceOf(FlinkException.class)
+                .hasMessageContaining(errorMsg);
+
+        assertThatThrownBy(
+                        () ->
+                                DefaultPackagedProgramRetriever.create(
+                                        null,
+                                        null,
+                                        Arrays.asList(
+                                                multipleEntryClassesClasspathProvider
+                                                        .getDirectory()
+                                                        .listFiles()),
+                                        null,
+                                        new String[0],
+                                        new Configuration()))
+                .isInstanceOf(FlinkException.class)
+                .hasMessageContaining(errorMsg);
     }
 
     @Test
@@ -476,6 +496,116 @@ class DefaultPackagedProgramRetrieverITCase {
     }
 
     @Test
+    void testRetrieveFromJarFileWithNonRootUserLib()
+            throws IOException, FlinkException, ProgramInvocationException {
+        final PackagedProgramRetriever retrieverUnderTest =
+                DefaultPackagedProgramRetriever.create(
+                        singleEntryClassClasspathProvider.getDirectory().getParentFile(),
+                        // the testJob jar is not on the user classpath
+                        testJobEntryClassClasspathProvider.getJobJar(),
+                        null,
+                        null,
+                        ClasspathProviderExtension.parametersForTestJob("suffix"),
+                        new Configuration());
+        final JobGraph jobGraph = retrieveJobGraph(retrieverUnderTest, new Configuration());
+
+        assertThat(jobGraph.getUserJars())
+                .contains(
+                        new org.apache.flink.core.fs.Path(
+                                testJobEntryClassClasspathProvider.getJobJar().toURI()));
+        final List<String> actualClasspath =
+                jobGraph.getClasspaths().stream().map(URL::toString).collect(Collectors.toList());
+        final List<String> expectedClasspath =
+                extractRelativizedURLsForJarsFromDirectory(
+                        singleEntryClassClasspathProvider.getDirectory());
+
+        assertThat(actualClasspath).isEqualTo(expectedClasspath);
+    }
+
+    @Test
+    void testRetrieveFromJarFileWithArtifacts()
+            throws IOException, FlinkException, ProgramInvocationException {
+        final PackagedProgramRetriever retrieverUnderTest =
+                DefaultPackagedProgramRetriever.create(
+                        null,
+                        // the testJob jar is not on the user classpath
+                        testJobEntryClassClasspathProvider.getJobJar(),
+                        Arrays.asList(
+                                additionalArtifactClasspathProvider.getDirectory().listFiles()),
+                        null,
+                        ClasspathProviderExtension.parametersForTestJob("suffix"),
+                        new Configuration());
+        final JobGraph jobGraph = retrieveJobGraph(retrieverUnderTest, new Configuration());
+
+        assertThat(jobGraph.getUserJars())
+                .contains(
+                        new org.apache.flink.core.fs.Path(
+                                testJobEntryClassClasspathProvider.getJobJar().toURI()));
+        final List<String> actualClasspath =
+                jobGraph.getClasspaths().stream().map(URL::toString).collect(Collectors.toList());
+        final List<String> expectedClasspath =
+                extractRelativizedURLsForJarsFromDirectory(
+                        additionalArtifactClasspathProvider.getDirectory());
+
+        assertThat(actualClasspath).isEqualTo(expectedClasspath);
+    }
+
+    @Test
+    void testRetrieveFromJarFileWithUserAndArtifactLib()
+            throws IOException, FlinkException, ProgramInvocationException {
+        final PackagedProgramRetriever retrieverUnderTest =
+                DefaultPackagedProgramRetriever.create(
+                        singleEntryClassClasspathProvider.getDirectory(),
+                        // the testJob jar is not on the user classpath
+                        testJobEntryClassClasspathProvider.getJobJar(),
+                        Arrays.asList(
+                                additionalArtifactClasspathProvider.getDirectory().listFiles()),
+                        null,
+                        ClasspathProviderExtension.parametersForTestJob("suffix"),
+                        new Configuration());
+        final JobGraph jobGraph = retrieveJobGraph(retrieverUnderTest, new Configuration());
+
+        assertThat(jobGraph.getUserJars())
+                .contains(
+                        new org.apache.flink.core.fs.Path(
+                                testJobEntryClassClasspathProvider.getJobJar().toURI()));
+        final List<String> actualClasspath =
+                jobGraph.getClasspaths().stream().map(URL::toString).collect(Collectors.toList());
+        final List<String> expectedClasspath = new ArrayList<>();
+        expectedClasspath.addAll(
+                extractRelativizedURLsForJarsFromDirectory(
+                        singleEntryClassClasspathProvider.getDirectory()));
+        expectedClasspath.addAll(
+                extractRelativizedURLsForJarsFromDirectory(
+                        additionalArtifactClasspathProvider.getDirectory()));
+
+        assertThat(actualClasspath).isEqualTo(expectedClasspath);
+    }
+
+    @Test
+    void testRetrieveFromArtifactLibWithoutJarFile()
+            throws IOException, FlinkException, ProgramInvocationException {
+        final PackagedProgramRetriever retrieverUnderTest =
+                DefaultPackagedProgramRetriever.create(
+                        null,
+                        null,
+                        Arrays.asList(
+                                multipleEntryClassesClasspathProvider.getDirectory().listFiles()),
+                        multipleEntryClassesClasspathProvider.getJobClassName(),
+                        ClasspathProviderExtension.parametersForTestJob("suffix"),
+                        new Configuration());
+        final JobGraph jobGraph = retrieveJobGraph(retrieverUnderTest, new Configuration());
+
+        final List<String> actualClasspath =
+                jobGraph.getClasspaths().stream().map(URL::toString).collect(Collectors.toList());
+        final List<String> expectedClasspath =
+                extractRelativizedURLsForJarsFromDirectory(
+                        multipleEntryClassesClasspathProvider.getDirectory());
+
+        assertThat(actualClasspath).isEqualTo(expectedClasspath);
+    }
+
+    @Test
     void testChildFirstDefaultConfiguration() throws FlinkException {
         // this is a sanity check to backup testConfigurationIsConsidered
         final Configuration configuration = new Configuration();
@@ -525,7 +655,7 @@ class DefaultPackagedProgramRetrieverITCase {
             throws FlinkException, ProgramInvocationException, MalformedURLException {
         final PackagedProgram packagedProgram = retrieverUnderTest.getPackagedProgram();
 
-        final int defaultParallelism = configuration.getInteger(CoreOptions.DEFAULT_PARALLELISM);
+        final int defaultParallelism = configuration.get(CoreOptions.DEFAULT_PARALLELISM);
         ConfigUtils.encodeCollectionToConfig(
                 configuration,
                 PipelineOptions.JARS,

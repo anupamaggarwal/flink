@@ -53,7 +53,7 @@ import org.apache.flink.runtime.state.CheckpointStorageLocationReference;
 import org.apache.flink.util.concurrent.FutureUtils;
 import org.apache.flink.util.function.CheckedSupplier;
 
-import org.apache.flink.shaded.guava32.com.google.common.collect.Lists;
+import org.apache.flink.shaded.guava31.com.google.common.collect.Lists;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.stubbing.Answer;
@@ -166,6 +166,7 @@ class LocalInputChannelTest {
                                             networkBuffers.createBufferPool(
                                                     producerBufferPoolSize,
                                                     producerBufferPoolSize,
+                                                    producerBufferPoolSize,
                                                     parallelism,
                                                     Integer.MAX_VALUE,
                                                     0))
@@ -203,7 +204,8 @@ class LocalInputChannelTest {
                                 i,
                                 parallelism,
                                 numberOfBuffersPerChannel,
-                                networkBuffers.createBufferPool(parallelism, parallelism),
+                                networkBuffers.createBufferPool(
+                                        parallelism, parallelism, parallelism),
                                 partitionManager,
                                 new TaskEventDispatcher(),
                                 partitionIds);

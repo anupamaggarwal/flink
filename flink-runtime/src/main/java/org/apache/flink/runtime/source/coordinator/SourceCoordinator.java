@@ -20,12 +20,16 @@ package org.apache.flink.runtime.source.coordinator;
 
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.VisibleForTesting;
+import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.eventtime.Watermark;
 import org.apache.flink.api.common.eventtime.WatermarkAlignmentParams;
+import org.apache.flink.api.connector.source.DynamicFilteringInfo;
+import org.apache.flink.api.connector.source.DynamicParallelismInference;
 import org.apache.flink.api.connector.source.Source;
 import org.apache.flink.api.connector.source.SourceEvent;
 import org.apache.flink.api.connector.source.SourceSplit;
 import org.apache.flink.api.connector.source.SplitEnumerator;
+import org.apache.flink.api.connector.source.SupportsBatchSnapshot;
 import org.apache.flink.api.connector.source.SupportsHandleExecutionAttemptSourceEvent;
 import org.apache.flink.core.io.SimpleVersionedSerializer;
 import org.apache.flink.core.memory.DataInputViewStreamWrapper;
@@ -66,6 +70,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import static org.apache.flink.runtime.source.coordinator.SourceCoordinatorSerdeUtils.readAndVerifyCoordinatorSerdeVersion;
@@ -73,6 +78,7 @@ import static org.apache.flink.runtime.source.coordinator.SourceCoordinatorSerde
 import static org.apache.flink.runtime.source.coordinator.SourceCoordinatorSerdeUtils.writeCoordinatorSerdeVersion;
 import static org.apache.flink.util.IOUtils.closeQuietly;
 import static org.apache.flink.util.Preconditions.checkArgument;
+import static org.apache.flink.util.Preconditions.checkNotNull;
 import static org.apache.flink.util.Preconditions.checkState;
 
 /**
@@ -192,12 +198,16 @@ public class SourceCoordinator<SplitT extends SourceSplit, EnumChkT>
                 subTaskIds,
                 operatorName);
 
-        // Subtask maybe during deploying or restarting, so we only send WatermarkAlignmentEvent
-        // to ready task to avoid period task fail (Java-ThreadPoolExecutor will not schedule
-        // the period task if it throws an exception).
         for (Integer subtaskId : subTaskIds) {
-            context.sendEventToSourceOperatorIfTaskReady(
-                    subtaskId, new WatermarkAlignmentEvent(maxAllowedWatermark));
+            // when subtask have been finished, do not send event.
+            if (!context.hasNoMoreSplits(subtaskId)) {
+                // Subtask maybe during deploying or restarting, so we only send
+                // WatermarkAlignmentEvent to ready task to avoid period task fail
+                // (Java-ThreadPoolExecutor will not schedule the period task if it throws an
+                // exception).
+                context.sendEventToSourceOperatorIfTaskReady(
+                        subtaskId, new WatermarkAlignmentEvent(maxAllowedWatermark));
+            }
         }
     }
 
@@ -372,6 +382,16 @@ public class SourceCoordinator<SplitT extends SourceSplit, EnumChkT>
                 attemptNumber);
     }
 
+    /**
+     * Whether the enumerator supports batch snapshot. Note the enumerator is created either during
+     * resetting the coordinator to a checkpoint, or when the coordinator is started.
+     */
+    @Override
+    public boolean supportsBatchSnapshot() {
+        checkNotNull(enumerator);
+        return enumerator instanceof SupportsBatchSnapshot;
+    }
+
     @Override
     public void checkpointCoordinator(long checkpointId, CompletableFuture<byte[]> result) {
         runInEventLoop(
@@ -381,8 +401,28 @@ public class SourceCoordinator<SplitT extends SourceSplit, EnumChkT>
                             operatorName,
                             checkpointId);
                     try {
-                        context.onCheckpoint(checkpointId);
-                        result.complete(toBytes(checkpointId));
+                        if (checkpointId == BATCH_CHECKPOINT_ID) {
+                            checkState(supportsBatchSnapshot());
+                            try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                                    DataOutputStream out = new DataOutputViewStreamWrapper(baos)) {
+                                // assignments
+                                byte[] assignmentData =
+                                        context.getAssignmentTracker()
+                                                .snapshotState(source.getSplitSerializer());
+                                out.writeInt(assignmentData.length);
+                                out.write(assignmentData);
+
+                                // enumerator
+                                byte[] enumeratorData = toBytes(checkpointId);
+                                out.writeInt(enumeratorData.length);
+                                out.write(enumeratorData);
+                                out.flush();
+                                result.complete(baos.toByteArray());
+                            }
+                        } else {
+                            context.onCheckpoint(checkpointId);
+                            result.complete(toBytes(checkpointId));
+                        }
                     } catch (Throwable e) {
                         ExceptionUtils.rethrowIfFatalErrorOrOOM(e);
                         result.completeExceptionally(
@@ -443,10 +483,33 @@ public class SourceCoordinator<SplitT extends SourceSplit, EnumChkT>
 
         final ClassLoader userCodeClassLoader =
                 context.getCoordinatorContext().getUserCodeClassloader();
-        try (TemporaryClassLoaderContext ignored =
-                TemporaryClassLoaderContext.of(userCodeClassLoader)) {
-            final EnumChkT enumeratorCheckpoint = deserializeCheckpoint(checkpointData);
-            enumerator = source.restoreEnumerator(context, enumeratorCheckpoint);
+
+        if (checkpointId == BATCH_CHECKPOINT_ID) {
+            try (TemporaryClassLoaderContext ignored =
+                    TemporaryClassLoaderContext.of(userCodeClassLoader)) {
+                try (ByteArrayInputStream bais = new ByteArrayInputStream(checkpointData);
+                        DataInputStream in = new DataInputViewStreamWrapper(bais)) {
+                    int assignmentDataLength = in.readInt();
+                    byte[] assignmentData =
+                            SourceCoordinatorSerdeUtils.readBytes(in, assignmentDataLength);
+
+                    int enumeratorDataLength = in.readInt();
+                    byte[] enumeratorData =
+                            SourceCoordinatorSerdeUtils.readBytes(in, enumeratorDataLength);
+
+                    final EnumChkT enumeratorCheckpoint = deserializeCheckpoint(enumeratorData);
+                    enumerator = source.restoreEnumerator(context, enumeratorCheckpoint);
+
+                    context.getAssignmentTracker()
+                            .restoreState(source.getSplitSerializer(), assignmentData);
+                }
+            }
+        } else {
+            try (TemporaryClassLoaderContext ignored =
+                    TemporaryClassLoaderContext.of(userCodeClassLoader)) {
+                final EnumChkT enumeratorCheckpoint = deserializeCheckpoint(checkpointData);
+                enumerator = source.restoreEnumerator(context, enumeratorCheckpoint);
+            }
         }
     }
 
@@ -488,13 +551,18 @@ public class SourceCoordinator<SplitT extends SourceSplit, EnumChkT>
 
     // ---------------------------------------------------
     @VisibleForTesting
-    SplitEnumerator<SplitT, EnumChkT> getEnumerator() {
+    public SplitEnumerator<SplitT, EnumChkT> getEnumerator() {
         return enumerator;
     }
 
     @VisibleForTesting
     SourceCoordinatorContext<SplitT> getContext() {
         return context;
+    }
+
+    @VisibleForTesting
+    public ExecutorService getCoordinatorExecutor() {
+        return context.getCoordinatorExecutor();
     }
 
     // --------------------- Serde -----------------------
@@ -651,6 +719,60 @@ public class SourceCoordinator<SplitT extends SourceSplit, EnumChkT>
         if (!started) {
             throw new IllegalStateException("The coordinator has not started yet.");
         }
+    }
+
+    private Optional<DynamicFilteringInfo> getSourceDynamicFilteringInfo() {
+        if (coordinatorListeningID != null
+                && coordinatorStore.containsKey(coordinatorListeningID)) {
+            Object event = coordinatorStore.get(coordinatorListeningID);
+            if (event instanceof SourceEventWrapper) {
+                SourceEvent sourceEvent = ((SourceEventWrapper) event).getSourceEvent();
+                if (sourceEvent instanceof DynamicFilteringInfo) {
+                    return Optional.of((DynamicFilteringInfo) sourceEvent);
+                }
+            }
+        }
+
+        return Optional.empty();
+    }
+
+    public CompletableFuture<Integer> inferSourceParallelismAsync(
+            int parallelismInferenceUpperBound, long dataVolumePerTask) {
+        return context.supplyAsync(
+                        () -> {
+                            if (!(source instanceof DynamicParallelismInference)) {
+                                return ExecutionConfig.PARALLELISM_DEFAULT;
+                            }
+
+                            DynamicParallelismInference parallelismInference =
+                                    (DynamicParallelismInference) source;
+                            try {
+                                return parallelismInference.inferParallelism(
+                                        new DynamicParallelismInference.Context() {
+                                            @Override
+                                            public Optional<DynamicFilteringInfo>
+                                                    getDynamicFilteringInfo() {
+                                                return getSourceDynamicFilteringInfo();
+                                            }
+
+                                            @Override
+                                            public int getParallelismInferenceUpperBound() {
+                                                return parallelismInferenceUpperBound;
+                                            }
+
+                                            @Override
+                                            public long getDataVolumePerTask() {
+                                                return dataVolumePerTask;
+                                            }
+                                        });
+                            } catch (Throwable e) {
+                                LOG.error(
+                                        "Unexpected error occurred when dynamically inferring source parallelism.",
+                                        e);
+                                return ExecutionConfig.PARALLELISM_DEFAULT;
+                            }
+                        })
+                .thenApply(future -> (Integer) future);
     }
 
     /** The watermark element for {@link HeapPriorityQueue}. */

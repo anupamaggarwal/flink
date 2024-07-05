@@ -128,9 +128,9 @@ public class DefaultExecutionGraphFactory implements ExecutionGraphFactory {
                 new CachingSupplier<>(
                         () ->
                                 new CheckpointStatsTracker(
-                                        configuration.getInteger(
-                                                WebOptions.CHECKPOINTS_HISTORY_SIZE),
-                                        jobManagerJobMetricGroup));
+                                        configuration.get(WebOptions.CHECKPOINTS_HISTORY_SIZE),
+                                        jobManagerJobMetricGroup,
+                                        jobManagerJobMetricGroup.jobId()));
         this.isDynamicGraph = isDynamicGraph;
         this.executionJobVertexFactory = checkNotNull(executionJobVertexFactory);
         this.nonFinishedHybridPartitionShouldBeUnknown = nonFinishedHybridPartitionShouldBeUnknown;
